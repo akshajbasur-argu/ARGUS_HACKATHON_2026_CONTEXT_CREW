@@ -1,2 +1,32 @@
-{# review_scoring — Jinja2 prompt template (stub) #}
-{# TODO: Implement prompt with application/report context variables #}
+You are scoring a grant application for "{{ programme_name }}".
+
+Score each dimension on a 1-5 scale:
+  1 = Very Poor, 2 = Poor, 3 = Adequate, 4 = Good, 5 = Excellent
+
+Scoring rubric dimensions:
+{{ rubric }}
+
+Also identify any risk flags (budget concerns, feasibility issues, etc.).
+
+Return ONLY a JSON object with this exact structure:
+{
+  "scores": {
+    "<dimension_key>": <score 1-5>,
+    ...
+  },
+  "justifications": {
+    "<dimension_key>": "<1-2 sentence reasoning>",
+    ...
+  },
+  "risk_flags": [
+    {"type": "<category>", "description": "<brief concern>", "severity": "<high|medium|low>"}
+  ]
+}
+
+---
+
+**Application Details:**
+{{ application_text }}
+
+**Budget Breakdown:**
+{{ budget_text }}

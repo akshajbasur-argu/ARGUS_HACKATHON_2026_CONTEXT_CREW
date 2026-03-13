@@ -15,7 +15,7 @@ from app.core.redis import get_redis
 from app.core.security import hash_password, verify_password
 from app.features.admin.models import AuditLog
 from app.features.auth.models import Organisation, User
-from app.features.auth.schemas import RegisterRequest
+from app.features.auth.schemas import OrganisationUpdate, RegisterRequest
 
 
 # ── User CRUD ────────────────────────────────────────────────────────────────
@@ -58,6 +58,44 @@ async def create_user(db: AsyncSession, data: RegisterRequest) -> User:
     db.add(org)
     await db.flush()
     return user
+
+
+# ── Organisation CRUD ─────────────────────────────────────────────────────
+
+
+async def get_organisation_by_user(
+    db: AsyncSession, user_id: uuid.UUID
+) -> Organisation | None:
+    result = await db.execute(
+        select(Organisation).where(Organisation.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def upsert_organisation(
+    db: AsyncSession, user_id: uuid.UUID, data: OrganisationUpdate
+) -> Organisation:
+    """Update existing org or create new one with provided fields."""
+    org = await get_organisation_by_user(db, user_id)
+
+    if org is None:
+        # Create new — use provided fields or sensible defaults
+        from app.core.enums import OrgType
+
+        org = Organisation(
+            user_id=user_id,
+            legal_name=data.legal_name or "Unnamed Organisation",
+            org_type=data.org_type or OrgType.ngo,
+        )
+        db.add(org)
+
+    # Update only fields that were explicitly set
+    update_data = data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(org, field, value)
+
+    await db.flush()
+    return org
 
 
 async def authenticate_user(
