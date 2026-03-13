@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import create_access_token, create_refresh_token, decode_token
-from app.features.auth.dependencies import require_auth
+from app.features.auth.dependencies import require_applicant, require_auth
 from app.features.auth.models import User
 from app.features.auth.schemas import (
     LoginRequest,
@@ -234,3 +234,64 @@ async def update_my_org(
     org = await upsert_organisation(db, current_user.id, body)
     await db.commit()
     return org
+
+
+# ── GET /organisations/me/eligibility ───────────────────────────────────
+
+
+@router.get("/organisations/me/eligibility")
+async def get_my_eligibility(
+    current_user: Annotated[User, Depends(require_applicant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Personalised eligibility banner — run hard rules against org profile."""
+    from decimal import Decimal
+
+    from app.features.auth.service import get_organisation_by_user
+    from app.features.programmes.service import list_programmes
+    from app.features.programmes.seeds import RULE_CHECKERS
+
+    org = await get_organisation_by_user(db, current_user.id)
+    if org is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organisation profile not found. Complete your profile first.",
+        )
+
+    # Determine if profile is sufficiently complete
+    if not org.org_type:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Organisation type is required for eligibility check.",
+        )
+
+    programmes = await list_programmes(db)
+    budget = Decimal(str(org.annual_budget_inr)) if org.annual_budget_inr else Decimal("0")
+
+    results = []
+    for prog in programmes:
+        checker = RULE_CHECKERS.get(prog.code)
+        if checker is None:
+            results.append({
+                "programme_id": str(prog.id),
+                "programme_code": prog.code,
+                "programme_name": prog.name,
+                "result": "likely_eligible",
+                "failed_rules": [],
+            })
+            continue
+
+        failed = checker(
+            org.org_type.value if hasattr(org.org_type, "value") else str(org.org_type),
+            org.state or "",
+            budget,
+        )
+        results.append({
+            "programme_id": str(prog.id),
+            "programme_code": prog.code,
+            "programme_name": prog.name,
+            "result": "likely_eligible" if not failed else "likely_ineligible",
+            "failed_rules": failed,
+        })
+
+    return results

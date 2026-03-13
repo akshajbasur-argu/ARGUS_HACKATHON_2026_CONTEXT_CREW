@@ -73,6 +73,7 @@ class TimelineEvent(BaseModel):
     occurred_at: datetime | None = None
     is_current: bool = False
     sla_date: str | None = None
+    expected_by: str | None = None
 
 
 class ApplicationTimeline(BaseModel):
@@ -107,9 +108,16 @@ class FieldCapture(BaseModel):
     value: Any
 
 
+class CapturedFieldItem(BaseModel):
+    field_name: str
+    label: str
+    value: Any
+
+
 class ChatIntakeResponse(BaseModel):
     assistant_message: str
     field_captured: FieldCapture | None = None
     next_field: str | None = None
     progress_pct: int = Field(ge=0, le=100)
     complete: bool = False
+    captured_fields: list[CapturedFieldItem] = Field(default_factory=list)

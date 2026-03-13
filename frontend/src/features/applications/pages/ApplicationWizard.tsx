@@ -96,6 +96,21 @@ export function ApplicationWizard() {
   })
 
   const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [showSavedToast, setShowSavedToast] = useState(false)
+  const isDirtyRef = useRef(false)
+  const formRef = useRef(form)
+  formRef.current = form
+
+  /* ── Persist helper ────────────────────────────────────────────── */
+  const persistDraft = useCallback(async () => {
+    if (!appId) return
+    try {
+      await apiClient.put(`/v1/applications/${appId}`, { form_data: formRef.current })
+      isDirtyRef.current = false
+      setShowSavedToast(true)
+      setTimeout(() => setShowSavedToast(false), 2000)
+    } catch { /* silent */ }
+  }, [appId])
 
   /* ── Create application on mount ─────────────────────────────────── */
   useEffect(() => {
@@ -122,22 +137,25 @@ export function ApplicationWizard() {
     createApp()
   }, [programmeId])
 
-  /* ── Auto-save every 30s ─────────────────────────────────────────── */
+  /* ── Auto-save every 30s (only if dirty) ─────────────────────────── */
   useEffect(() => {
     if (!appId) return
 
     autoSaveRef.current = setInterval(() => {
-      apiClient.put(`/v1/applications/${appId}`, { form_data: form }).catch(() => {})
+      if (isDirtyRef.current) {
+        persistDraft()
+      }
     }, 30000)
 
     return () => {
       if (autoSaveRef.current) clearInterval(autoSaveRef.current)
     }
-  }, [appId, form])
+  }, [appId, persistDraft])
 
   /* ── Field updater ───────────────────────────────────────────────── */
   const setField = useCallback(
     <K extends keyof FormData>(key: K, value: FormData[K]) => {
+      isDirtyRef.current = true
       setForm((prev) => ({ ...prev, [key]: value }))
       setErrors((prev) => {
         const next = { ...prev }
@@ -150,6 +168,7 @@ export function ApplicationWizard() {
 
   const setBudget = useCallback(
     (key: keyof FormData['budget_breakdown'], value: number) => {
+      isDirtyRef.current = true
       setForm((prev) => {
         const bb = { ...prev.budget_breakdown, [key]: value }
         const total = bb.personnel + bb.equipment + bb.travel + bb.overheads + bb.other
@@ -198,17 +217,24 @@ export function ApplicationWizard() {
     return Object.keys(errs).length === 0
   }
 
-  /* ── Navigation ──────────────────────────────────────────────────── */
+  /* ── Navigation (save before step change) ────────────────────────── */
   const goNext = () => {
     if (validateStep(step)) {
+      if (isDirtyRef.current) persistDraft()
       setStep((s) => Math.min(s + 1, STEPS.length - 1))
     }
   }
-  const goBack = () => setStep((s) => Math.max(s - 1, 0))
+  const goBack = () => {
+    if (isDirtyRef.current) persistDraft()
+    setStep((s) => Math.max(s - 1, 0))
+  }
 
   /* ── Submit ──────────────────────────────────────────────────────── */
   const handleSubmit = async () => {
     if (!validateStep(5) || !appId) return
+
+    // Cancel auto-save interval on submit
+    if (autoSaveRef.current) clearInterval(autoSaveRef.current)
 
     setSubmitting(true)
     setSubmitErrors([])
@@ -648,6 +674,18 @@ export function ApplicationWizard() {
           )}
         </div>
       </div>
+
+      {/* ── Auto-save toast ──────────────────────────────────────────── */}
+      {showSavedToast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-slide-up">
+          <div className="flex items-center gap-2 rounded-lg border border-moss/30 bg-moss/15 px-4 py-2.5 shadow-card">
+            <svg className="h-4 w-4 text-moss" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+            <span className="font-body text-sm font-medium text-moss">Saved</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

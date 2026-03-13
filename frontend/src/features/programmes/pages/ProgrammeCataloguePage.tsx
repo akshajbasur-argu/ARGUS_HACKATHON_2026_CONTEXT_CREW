@@ -4,6 +4,18 @@ import { listProgrammes } from '../api'
 import type { ProgrammeListItem } from '../types'
 import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
 import { PageHeader } from '@/shared/components/PageHeader'
+import { apiClient } from '@/api/client'
+import { useAuthStore } from '@/store/authStore'
+
+// ── Eligibility types ────────────────────────────────────────────────────
+
+interface EligibilityResult {
+  programme_id: string
+  programme_code: string
+  programme_name: string
+  result: 'likely_eligible' | 'likely_ineligible'
+  failed_rules: { rule_code: string; reason: string }[]
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -32,7 +44,46 @@ const ACCENT_CLASSES = [
   'border-l-water',
 ]
 
-function ProgrammeCard({ programme, index }: { programme: ProgrammeListItem; index: number }) {
+// ── Eligibility Banner ───────────────────────────────────────────────────
+
+function EligibilityBanner({ result }: { result: EligibilityResult }) {
+  if (result.result === 'likely_eligible') {
+    return (
+      <div className="mx-5 md:mx-6 mb-3 rounded-lg bg-moss/15 border border-moss/30 px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <svg className="h-4 w-4 text-moss shrink-0" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+          </svg>
+          <p className="font-body text-sm font-medium text-moss">You are likely eligible</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mx-5 md:mx-6 mb-3 rounded-lg bg-amber/10 border border-amber/30 px-4 py-2.5">
+      <div className="flex items-center gap-2 mb-1">
+        <svg className="h-4 w-4 text-amber shrink-0" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+        </svg>
+        <p className="font-body text-sm font-medium text-amber">Check eligibility</p>
+      </div>
+      <ul className="ml-6 space-y-0.5">
+        {result.failed_rules.map((rule) => (
+          <li key={rule.rule_code} className="font-body text-xs text-bark">
+            {rule.reason}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function ProgrammeCard({ programme, index, eligibility }: {
+  programme: ProgrammeListItem
+  index: number
+  eligibility?: EligibilityResult | null
+}) {
   const accent = ACCENT_CLASSES[index % ACCENT_CLASSES.length]
   return (
     <article
@@ -44,6 +95,9 @@ function ProgrammeCard({ programme, index }: { programme: ProgrammeListItem; ind
       ].join(' ')}
       style={{ animationDelay: `${index * 80}ms`, animationFillMode: 'both' }}
     >
+      {/* Eligibility banner */}
+      {eligibility && <div className="pt-4"><EligibilityBanner result={eligibility} /></div>}
+
       {/* Header */}
       <div className="px-5 pt-5 pb-3 md:px-6 md:pt-6">
         <span className="inline-block rounded-pill bg-straw px-2.5 py-0.5 font-mono text-xs font-semibold uppercase tracking-wider text-clay mb-2">
@@ -160,6 +214,10 @@ export function ProgrammeCataloguePage() {
   const [programmes, setProgrammes] = useState<ProgrammeListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [eligibility, setEligibility] = useState<EligibilityResult[]>([])
+  const [eligibilityStatus, setEligibilityStatus] = useState<'idle' | 'loaded' | 'incomplete'>('idle')
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const userRole = useAuthStore((s) => s.user?.role)
 
   useEffect(() => {
     listProgrammes()
@@ -167,6 +225,26 @@ export function ProgrammeCataloguePage() {
       .catch(() => setError('Could not load programmes. Please try again.'))
       .finally(() => setLoading(false))
   }, [])
+
+  // Fetch personalised eligibility when logged in as applicant
+  useEffect(() => {
+    if (!isAuthenticated || userRole !== 'applicant') return
+
+    apiClient.get<EligibilityResult[]>('/v1/auth/organisations/me/eligibility')
+      .then(({ data }) => {
+        setEligibility(data)
+        setEligibilityStatus('loaded')
+      })
+      .catch((err) => {
+        // 422 means profile incomplete
+        if (err?.response?.status === 422 || err?.response?.status === 404) {
+          setEligibilityStatus('incomplete')
+        }
+      })
+  }, [isAuthenticated, userRole])
+
+  const getEligibility = (programmeId: string) =>
+    eligibility.find((e) => e.programme_id === programmeId) ?? null
 
   return (
     <div className="min-h-screen bg-cream px-4 py-8 md:px-8 md:py-12 pb-40">
@@ -206,11 +284,24 @@ export function ProgrammeCataloguePage() {
           </div>
         )}
 
+        {/* Profile incomplete banner */}
+        {eligibilityStatus === 'incomplete' && (
+          <div className="mb-6 rounded-lg border border-amber/30 bg-amber/10 px-5 py-4 flex items-center gap-3">
+            <svg className="h-5 w-5 text-amber shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+            </svg>
+            <p className="font-body text-sm text-bark">
+              <Link to="/dashboard" className="font-semibold text-clay hover:underline">Complete your profile</Link>
+              {' '}to see personalised eligibility for each programme.
+            </p>
+          </div>
+        )}
+
         {/* Card grid */}
         {!loading && !error && programmes.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {programmes.map((p, i) => (
-              <ProgrammeCard key={p.id} programme={p} index={i} />
+              <ProgrammeCard key={p.id} programme={p} index={i} eligibility={getEligibility(p.id)} />
             ))}
           </div>
         )}

@@ -8,11 +8,25 @@ export interface TimelineEvent {
   occurred_at?: string | null
   is_current?: boolean
   sla_date?: string | null
+  expected_by?: string | null
 }
 
 interface StageTimelineProps {
   events: TimelineEvent[]
   className?: string
+}
+
+/* ── Helpers ───────────────────────────────────────────────────────────── */
+
+function formatExpectedBy(isoDate: string): string {
+  const d = new Date(isoDate)
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function isOverdue(isoDate: string): boolean {
+  const deadline = new Date(isoDate)
+  deadline.setHours(23, 59, 59, 999)
+  return new Date() > deadline
 }
 
 /* ── Component ─────────────────────────────────────────────────────────── */
@@ -23,6 +37,7 @@ export function StageTimeline({ events, className }: StageTimelineProps) {
       {events.map((evt, i) => {
         const isCompleted = !evt.is_current && evt.occurred_at != null
         const isCurrent = evt.is_current === true
+        const overdue = isCurrent && evt.expected_by ? isOverdue(evt.expected_by) : false
 
         return (
           <div key={evt.stage} className="relative flex gap-4 pb-8 last:pb-0">
@@ -44,7 +59,9 @@ export function StageTimeline({ events, className }: StageTimelineProps) {
                   isCompleted
                     ? 'border-moss bg-moss text-cream'
                     : isCurrent
-                      ? 'border-clay bg-clay text-cream animate-pulse'
+                      ? overdue
+                        ? 'border-rust bg-rust text-cream'
+                        : 'border-clay bg-clay text-cream animate-pulse'
                       : 'border-sand/60 bg-cream text-sand',
                 )}
               >
@@ -92,7 +109,20 @@ export function StageTimeline({ events, className }: StageTimelineProps) {
                 </p>
               )}
 
-              {isCurrent && evt.sla_date && (
+              {isCurrent && evt.expected_by && (
+                overdue ? (
+                  <p className="mt-1 rounded-md bg-rust/10 px-2 py-0.5 inline-block font-mono text-[10px] text-rust font-medium">
+                    Overdue
+                  </p>
+                ) : (
+                  <p className="mt-1 rounded-md bg-amber/10 px-2 py-0.5 inline-block font-mono text-[10px] text-amber font-medium">
+                    Expected by {formatExpectedBy(evt.expected_by)}
+                  </p>
+                )
+              )}
+
+              {/* Fallback to sla_date if no expected_by */}
+              {isCurrent && !evt.expected_by && evt.sla_date && (
                 <p className="mt-1 rounded-md bg-amber/10 px-2 py-0.5 inline-block font-mono text-[10px] text-amber font-medium">
                   {evt.sla_date}
                 </p>

@@ -378,18 +378,31 @@ STAGE_ORDER = [
     ("active", "Grant Active"),
 ]
 
+# Programme-specific SLA durations (days) per stage
+_SLA_DAYS: dict[str, dict[str, int]] = {
+    "CDG":  {"screening": 1, "under_review": 7,  "approved": 3, "agreement_sent": 1},
+    "EIG":  {"screening": 1, "under_review": 10, "approved": 5, "agreement_sent": 1},
+    "ECAG": {"screening": 1, "under_review": 7,  "approved": 3, "agreement_sent": 1},
+}
+_DEFAULT_SLA: dict[str, int] = {"screening": 1, "under_review": 7, "approved": 3, "agreement_sent": 1}
+
 
 async def get_application_timeline(
     db: AsyncSession,
     application_id: uuid.UUID,
 ) -> ApplicationTimeline | None:
-    """Build a stage timeline for the application."""
+    """Build a stage timeline for the application with programme-specific SLA dates."""
     result = await db.execute(
-        select(Application).where(Application.id == application_id)
+        select(Application, GrantProgramme.code)
+        .join(GrantProgramme, GrantProgramme.id == Application.programme_id)
+        .where(Application.id == application_id)
     )
-    app = result.scalar_one_or_none()
-    if app is None:
+    row = result.first()
+    if row is None:
         return None
+
+    app, programme_code = row
+    sla_map = _SLA_DAYS.get(programme_code, _DEFAULT_SLA)
 
     current = app.status.value
     events: list[TimelineEvent] = []
@@ -408,14 +421,17 @@ async def get_application_timeline(
                 occurred_at=app.submitted_at,
             ))
         elif is_current:
-            # SLA: 5 business days from last update
-            sla = (app.updated_at + timedelta(days=5)).strftime("%d %b %Y")
+            sla_days = sla_map.get(stage_val, 5)
+            expected_dt = app.updated_at + timedelta(days=sla_days)
+            expected_iso = expected_dt.strftime("%Y-%m-%d")
+            sla_human = expected_dt.strftime("%d %b %Y")
             events.append(TimelineEvent(
                 stage=stage_val,
                 label=label,
                 occurred_at=app.updated_at,
                 is_current=True,
-                sla_date=f"Expected by {sla}",
+                sla_date=f"Expected by {sla_human}",
+                expected_by=expected_iso,
             ))
         else:
             # Future stages

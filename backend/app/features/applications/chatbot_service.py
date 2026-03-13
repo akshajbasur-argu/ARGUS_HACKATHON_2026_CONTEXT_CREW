@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.openai_client import AIServiceError, call_openai, render_prompt
 from app.features.applications.schemas import (
+    CapturedFieldItem,
     ChatIntakeRequest,
     ChatIntakeResponse,
     FieldCapture,
@@ -110,6 +111,21 @@ def _find_next_field(
     return None
 
 
+def _build_captured_items(
+    captured: dict, fields: list[dict]
+) -> list[CapturedFieldItem]:
+    """Build a list of CapturedFieldItem from captured dict and field defs."""
+    label_map = {f["name"]: f["label"] for f in fields}
+    return [
+        CapturedFieldItem(
+            field_name=name,
+            label=label_map.get(name, name.replace("_", " ").title()),
+            value=value,
+        )
+        for name, value in captured.items()
+    ]
+
+
 # ── Main chat handler ────────────────────────────────────────────────────────
 
 
@@ -145,6 +161,9 @@ async def handle_chat_intake(
     current_field = request.current_field or _find_next_field(captured_fields, fields, None)
     progress_pct = _compute_progress(captured_fields, fields)
 
+    # Build captured_fields list with labels
+    captured_items = _build_captured_items(captured_fields, fields)
+
     # Check if already complete
     if progress_pct >= 100:
         return ChatIntakeResponse(
@@ -154,6 +173,7 @@ async def handle_chat_intake(
             ),
             progress_pct=100,
             complete=True,
+            captured_fields=captured_items,
         )
 
     # Build field definitions string for the prompt
@@ -198,6 +218,7 @@ async def handle_chat_intake(
             next_field=current_field,
             progress_pct=progress_pct,
             complete=False,
+            captured_fields=captured_items,
         )
 
     # Parse AI response
@@ -208,6 +229,9 @@ async def handle_chat_intake(
             field_name=ai_captured.get("field_name", ""),
             value=ai_captured.get("value", ""),
         )
+        # Add newly captured field to the running list
+        captured_fields[field_captured.field_name] = field_captured.value
+        captured_items = _build_captured_items(captured_fields, fields)
 
     return ChatIntakeResponse(
         assistant_message=ai_result.get(
@@ -218,6 +242,7 @@ async def handle_chat_intake(
         next_field=ai_result.get("next_field", current_field),
         progress_pct=ai_result.get("progress_pct", progress_pct),
         complete=ai_result.get("complete", False),
+        captured_fields=captured_items,
     )
 
 
