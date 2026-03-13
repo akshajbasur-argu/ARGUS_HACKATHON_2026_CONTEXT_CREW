@@ -92,5 +92,23 @@ class DashboardResponse(BaseModel):
     grants: list[GrantSummary]
 
 
+class ProgrammeSummary(BaseModel):
+    programme_code: str
+    programme_name: str
+    committed: Decimal
+    disbursed: Decimal
+    spent: Decimal
+    grant_count: int
+    utilisation_pct: float
+
+
+class ProgrammeDashboardResponse(BaseModel):
+    total_committed_inr: Decimal
+    total_disbursed_inr: Decimal
+    total_reported_expenditure_inr: Decimal
+    grants_by_status: dict[str, int]
+    per_programme: list[ProgrammeSummary]
+
+
 class MessageResponse(BaseModel):
     detail: str

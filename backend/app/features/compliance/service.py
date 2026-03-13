@@ -5,7 +5,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from decimal import Decimal
+
+from sqlalchemy import func as sa_func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,7 +19,7 @@ from app.core.enums import (
     ReportStatus,
     ReportType,
 )
-from app.features.applications.models import Application
+from app.features.applications.models import Application, Document
 from app.features.compliance.models import ComplianceAnalysis, Report
 from app.features.finance.models import Disbursement
 
@@ -65,6 +67,38 @@ async def submit_report(
         raise ValueError(
             f"Application must be in {[s.value for s in valid_statuses]} status"
         )
+
+    # ── Auditor certificate validation for final reports ─────────────────
+    if report_type == ReportType.final:
+        # Calculate total award amount from disbursements
+        disb_result = await db.execute(
+            select(sa_func.coalesce(sa_func.sum(Disbursement.amount_inr), 0))
+            .where(Disbursement.application_id == app_id)
+        )
+        award_amount = disb_result.scalar() or Decimal("0")
+
+        if award_amount > Decimal("1000000"):  # INR 10 lakh
+            # Check for auditor_certificate in uploaded documents
+            doc_result = await db.execute(
+                select(Document)
+                .where(Document.application_id == app_id)
+                .where(Document.doc_type == "auditor_certificate")
+            )
+            has_auditor_cert = doc_result.scalar_one_or_none() is not None
+
+            # Also check form_data attachments list
+            attachments = form_data.get("attachments", [])
+            has_in_attachments = any(
+                "auditor_certificate" in str(a).lower()
+                for a in attachments
+            )
+
+            if not has_auditor_cert and not has_in_attachments:
+                raise ValueError(
+                    "auditor_certificate_required: "
+                    "Final report for grants above INR 10 lakh requires "
+                    "a signed Auditor Certificate"
+                )
 
     report = Report(
         application_id=app_id,

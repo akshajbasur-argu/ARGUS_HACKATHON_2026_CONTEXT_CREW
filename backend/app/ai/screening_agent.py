@@ -396,12 +396,33 @@ async def run_screening(
     hard_checks_json = [r.to_dict() for r in hard_results]
     all_hard_passed = all(r.passed for r in hard_results)
 
+    # ── ECAG geographic priority check ──────────────────────────────────
+    ecag_geo_flags: list[dict] = []
+    if programme.code == "ECAG":
+        form_data = _get_form(application)
+        project_district = form_data.get("district", form_data.get("target_district", ""))
+        climate_districts = (programme.metadata_json or {}).get("climate_vulnerable_districts", [])
+        if project_district:
+            is_priority = project_district.lower() in [d.lower() for d in climate_districts]
+            if not is_priority:
+                ecag_geo_flags.append({
+                    "flag": "non_priority_district",
+                    "severity": "low",
+                    "detail": (
+                        f"{project_district} is not in climate-vulnerable priority list "
+                        "— not rejected but noted"
+                    ),
+                })
+
     # ── Soft checks (AI) ─────────────────────────────────────────────────
     soft_result = await run_soft_checks(application, programme)
 
     thematic_score = Decimal(str(soft_result.get("thematic_score", 0)))
     narrative_score = Decimal(str(soft_result.get("narrative_coherence", 0)))
     soft_flags = soft_result.get("soft_flags", [])
+
+    # Add ECAG geographic flags
+    soft_flags.extend(ecag_geo_flags)
 
     # Add extra soft flags from AI analysis
     if soft_result.get("beneficiary_specificity") == "missing":

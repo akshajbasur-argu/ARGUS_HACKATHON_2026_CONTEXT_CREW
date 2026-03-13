@@ -39,4 +39,8 @@ celery_app.conf.beat_schedule = {
         "task": "worker.tasks.notification_tasks.task_report_reminders",
         "schedule": crontab(hour=8, minute=0),  # every day at 08:00 UTC
     },
+    "overdue-report-alerts": {
+        "task": "worker.tasks.notification_tasks.check_overdue_reports",
+        "schedule": crontab(hour=8, minute=0, day_of_week="*/3"),  # every 3rd day at 08:00 UTC
+    },
 }

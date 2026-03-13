@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
+from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -18,11 +22,13 @@ from app.features.finance.schemas import (
     ExpenditureCreateRequest,
     ExpenditureRead,
     ExpenditureVerifyRequest,
+    ProgrammeDashboardResponse,
     ReleaseTrancheRequest,
 )
 from app.features.finance.service import (
     create_expenditure,
     get_dashboard_data,
+    get_programme_dashboard_data,
     list_all_disbursements,
     list_expenditures,
     release_tranche,
@@ -204,7 +210,7 @@ async def verify_expenditure_endpoint(
     return expenditure
 
 
-# ── GET /dashboard — programme-level aggregates ──────────────────────────────
+# ── GET /dashboard — grant-level aggregates ──────────────────────────────────
 
 
 @router.get("/dashboard", response_model=DashboardResponse)
@@ -212,5 +218,124 @@ async def finance_dashboard(
     officer: Annotated[User, Depends(require_finance_officer)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Programme-level finance aggregates for the dashboard."""
+    """Grant-level finance aggregates for the dashboard."""
     return await get_dashboard_data(db)
+
+
+# ── GET /dashboard/programme — programme-level aggregates ────────────────────
+
+
+@router.get("/dashboard/programme", response_model=ProgrammeDashboardResponse)
+async def programme_dashboard(
+    officer: Annotated[User, Depends(require_finance_officer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Programme-level finance aggregates: committed, disbursed, spent per programme."""
+    return await get_programme_dashboard_data(db)
+
+
+# ── GET /dashboard/export — export as PDF or CSV ────────────────────────────
+
+
+@router.get("/dashboard/export")
+async def export_dashboard(
+    officer: Annotated[User, Depends(require_finance_officer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    format: str = Query("csv", regex="^(csv|pdf)$"),
+    view: str = Query("grant", regex="^(programme|grant)$"),
+):
+    """Export fund dashboard as CSV or PDF."""
+    now = datetime.now(timezone.utc)
+    timestamp = now.strftime("%Y-%m-%d %H:%M UTC")
+
+    if view == "programme":
+        data = await get_programme_dashboard_data(db)
+        rows = [
+            {
+                "programme": p["programme_code"],
+                "grants": str(p["grant_count"]),
+                "committed": f"{p['committed']:,.2f}",
+                "disbursed": f"{p['disbursed']:,.2f}",
+                "spent": f"{p['spent']:,.2f}",
+                "utilisation_pct": f"{p['utilisation_pct']}%",
+            }
+            for p in data["per_programme"]
+        ]
+        headers = ["programme", "grants", "committed", "disbursed", "spent", "utilisation_pct"]
+    else:
+        data = await get_dashboard_data(db)
+        rows = [
+            {
+                "reference": g["reference_number"],
+                "programme": g["programme_name"],
+                "committed": f"{float(g['budget']):,.2f}",
+                "disbursed": f"{float(g['disbursed']):,.2f}",
+                "spent": f"{float(g['spent']):,.2f}",
+                "status": g["status"],
+            }
+            for g in data["grants"]
+        ]
+        headers = ["reference", "programme", "committed", "disbursed", "spent", "status"]
+
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=fund_report_{view}_{now.strftime('%Y%m%d')}.csv"},
+        )
+
+    # PDF generation using reportlab
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=20 * mm, bottomMargin=20 * mm)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # Header
+    elements.append(Paragraph(
+        f"GrantFlow Fund Utilisation Report — {now.strftime('%d %B %Y')}",
+        styles["Title"],
+    ))
+    elements.append(Spacer(1, 6 * mm))
+
+    # Table data
+    table_data = [headers] + [[row[h] for h in headers] for row in rows]
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#3B2F1E")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 9),
+        ("FONTSIZE", (0, 1), (-1, -1), 8),
+        ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#C4A882")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FAF6EE")]),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    elements.append(table)
+
+    # Footer
+    elements.append(Spacer(1, 10 * mm))
+    elements.append(Paragraph(
+        f"Exported by {officer.full_name} at {timestamp}",
+        styles["Normal"],
+    ))
+
+    doc.build(elements)
+    buf.seek(0)
+
+    return Response(
+        content=buf.read(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=fund_report_{view}_{now.strftime('%Y%m%d')}.pdf"},
+    )

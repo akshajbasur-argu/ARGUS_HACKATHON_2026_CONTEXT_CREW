@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { SectionCard } from '@/shared/components/SectionCard'
@@ -60,6 +60,26 @@ export function ReportSubmission() {
   // File attachments (simulated)
   const [attachments, setAttachments] = useState<string[]>([])
 
+  // Auditor certificate
+  const [auditorCertAttached, setAuditorCertAttached] = useState(false)
+  const [awardAmount, setAwardAmount] = useState<number>(0)
+  const auditorCertRequired = reportType === 'final' && awardAmount > 1000000
+  const auditorCertOptional = reportType === 'final' && awardAmount <= 1000000
+
+  // Fetch grant award amount for auditor cert check
+  useEffect(() => {
+    if (!appId) return
+    apiClient.get(`/v1/finance/disbursements`)
+      .then((res) => {
+        const disbursements = res.data as { application_id: string; amount_inr: string }[]
+        const total = disbursements
+          .filter((d) => d.application_id === appId)
+          .reduce((sum, d) => sum + parseFloat(d.amount_inr || '0'), 0)
+        setAwardAmount(total)
+      })
+      .catch(() => { /* non-critical */ })
+  }, [appId])
+
   // Submission state
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -84,7 +104,8 @@ export function ReportSubmission() {
     challengeWords >= minChallenge &&
     nextStepWords >= minNextStep &&
     financialWords >= minFinancial &&
-    periodLabel.trim().length > 0
+    periodLabel.trim().length > 0 &&
+    (!auditorCertRequired || auditorCertAttached)
 
   // Expenditure total
   const expenditureTotal = useMemo(() => {
@@ -143,7 +164,10 @@ export function ReportSubmission() {
             description: r.description,
           })),
           variance_explanation: varianceExplanation.trim(),
-          attachments: attachments,
+          attachments: [
+            ...attachments,
+            ...(auditorCertAttached ? ['auditor_certificate.pdf'] : []),
+          ],
         },
       })
       setSubmitted(true)
@@ -153,7 +177,7 @@ export function ReportSubmission() {
     } finally {
       setSubmitting(false)
     }
-  }, [appId, reportType, periodLabel, activitiesSummary, outcomeProgress, challenges, nextSteps, financialSummary, expenditures, varianceExplanation, attachments, meetsMinimums])
+  }, [appId, reportType, periodLabel, activitiesSummary, outcomeProgress, challenges, nextSteps, financialSummary, expenditures, varianceExplanation, attachments, auditorCertAttached, meetsMinimums])
 
   if (submitted) {
     return (
@@ -327,6 +351,62 @@ export function ReportSubmission() {
           </div>
         </SectionCard>
       </div>
+
+      {/* Auditor Certificate (conditional for final reports) */}
+      {reportType === 'final' && (
+        <div className="mt-6">
+          <SectionCard title={
+            auditorCertRequired
+              ? 'Auditor Certificate (required for grants > INR 10 lakh)'
+              : 'Auditor Certificate'
+          }>
+            {auditorCertRequired ? (
+              <div className="space-y-3">
+                <div className="rounded-md border border-amber/30 bg-amber/10 px-4 py-3">
+                  <p className="font-body text-sm text-bark">
+                    <span className="text-rust font-semibold">* Required</span> — Your grant award exceeds INR 10,00,000.
+                    A signed Auditor Certificate must be attached with the final report.
+                  </p>
+                </div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={auditorCertAttached}
+                    onChange={(e) => setAuditorCertAttached(e.target.checked)}
+                    className="h-4 w-4 rounded border-sand text-clay focus:ring-clay"
+                  />
+                  <span className="font-body text-sm text-bark">
+                    I have attached the signed Auditor Certificate
+                  </span>
+                </label>
+                {!auditorCertAttached && (
+                  <p className="font-body text-xs text-rust">
+                    You must attach an auditor certificate to submit this final report.
+                  </p>
+                )}
+              </div>
+            ) : auditorCertOptional ? (
+              <div className="rounded-md border border-moss/30 bg-moss/10 px-4 py-3">
+                <p className="font-body text-sm text-bark">
+                  Not required for this grant amount ({formatINR(awardAmount)}).
+                  You may still attach one if available.
+                </p>
+                <label className="mt-2 flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={auditorCertAttached}
+                    onChange={(e) => setAuditorCertAttached(e.target.checked)}
+                    className="h-4 w-4 rounded border-sand text-clay focus:ring-clay"
+                  />
+                  <span className="font-body text-sm text-bark">
+                    Attach Auditor Certificate (optional)
+                  </span>
+                </label>
+              </div>
+            ) : null}
+          </SectionCard>
+        </div>
+      )}
 
       {/* Submit */}
       <div className="mt-6">
