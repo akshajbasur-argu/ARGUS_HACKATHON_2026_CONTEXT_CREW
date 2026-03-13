@@ -19,52 +19,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ── Enum types ────────────────────────────────────────────────────────────
-    op.execute("""
-        CREATE TYPE user_role AS ENUM (
-            'platform_admin', 'program_officer', 'reviewer',
-            'finance_officer', 'applicant'
-        )
-    """)
-    op.execute("""
-        CREATE TYPE org_type AS ENUM (
-            'ngo', 'trust', 'society', 'company', 'government', 'individual'
-        )
-    """)
-    op.execute("""
-        CREATE TYPE application_status AS ENUM (
-            'submitted', 'screening', 'eligible', 'ineligible',
-            'under_review', 'review_complete', 'approved', 'rejected',
-            'waitlisted', 'agreement_sent', 'agreement_acknowledged',
-            'active', 'report_due', 'closed'
-        )
-    """)
-    op.execute("""
-        CREATE TYPE screening_outcome AS ENUM (
-            'eligible', 'ineligible', 'needs_review'
-        )
-    """)
-    op.execute("""
-        CREATE TYPE disbursement_trigger AS ENUM (
-            'submission_approval', 'milestone_1', 'milestone_2', 'final'
-        )
-    """)
-    op.execute("""
-        CREATE TYPE disbursement_status AS ENUM ('pending', 'ready', 'disbursed')
-    """)
-    op.execute("""
-        CREATE TYPE report_type AS ENUM ('progress', 'final')
-    """)
-    op.execute("""
-        CREATE TYPE report_status AS ENUM (
-            'submitted', 'under_review', 'approved', 'rejected'
-        )
-    """)
-    op.execute("""
-        CREATE TYPE content_rating AS ENUM (
-            'satisfactory', 'needs_attention', 'critical'
-        )
-    """)
 
     # ── users ─────────────────────────────────────────────────────────────────
     op.create_table(
@@ -74,7 +28,7 @@ def upgrade() -> None:
         sa.Column("hashed_password", sa.String(255), nullable=False),
         sa.Column("full_name", sa.String(255), nullable=False),
         sa.Column("phone", sa.String(20)),
-        sa.Column("role", sa.Enum(name="user_role", create_type=False), nullable=False),
+        sa.Column("role", sa.Enum('platform_admin', 'program_officer', 'reviewer', 'finance_officer', 'applicant', name='user_role'), nullable=False),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("true")),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
@@ -88,7 +42,7 @@ def upgrade() -> None:
         sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("legal_name", sa.String(512), nullable=False),
         sa.Column("registration_number", sa.String(100)),
-        sa.Column("org_type", sa.Enum(name="org_type", create_type=False), nullable=False),
+        sa.Column("org_type", sa.Enum('ngo', 'trust', 'society', 'company', 'government', 'individual', name='org_type'), nullable=False),
         sa.Column("year_established", sa.Integer),
         sa.Column("state", sa.String(100)),
         sa.Column("annual_budget_inr", sa.Numeric(20, 2)),
@@ -124,7 +78,7 @@ def upgrade() -> None:
         sa.Column("reference_number", sa.String(50), nullable=False),
         sa.Column("programme_id", UUID(as_uuid=True), sa.ForeignKey("grant_programmes.id"), nullable=False),
         sa.Column("applicant_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("status", sa.Enum(name="application_status", create_type=False), nullable=False,
+        sa.Column("status", sa.Enum('submitted', 'screening', 'eligible', 'ineligible', 'under_review', 'review_complete', 'approved', 'rejected', 'waitlisted', 'agreement_sent', 'agreement_acknowledged', 'active', 'report_due', 'closed', name='application_status'), nullable=False,
                   server_default=sa.text("'submitted'")),
         sa.Column("form_data", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
         sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
@@ -156,7 +110,7 @@ def upgrade() -> None:
         sa.Column("application_id", UUID(as_uuid=True), sa.ForeignKey("applications.id", ondelete="CASCADE"), nullable=False),
         sa.Column("hard_checks", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
         sa.Column("soft_flags", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
-        sa.Column("overall_result", sa.Enum(name="screening_outcome", create_type=False), nullable=False),
+        sa.Column("overall_result", sa.Enum('eligible', 'ineligible', 'needs_review', name='screening_outcome'), nullable=False),
         sa.Column("ai_thematic_score", sa.Numeric(5, 2)),
         sa.Column("ai_narrative_score", sa.Numeric(5, 2)),
         sa.Column("officer_decision", sa.String(20)),
@@ -211,8 +165,8 @@ def upgrade() -> None:
         sa.Column("application_id", UUID(as_uuid=True), sa.ForeignKey("applications.id"), nullable=False),
         sa.Column("tranche_label", sa.String(100), nullable=False),
         sa.Column("amount_inr", sa.Numeric(20, 2), nullable=False),
-        sa.Column("trigger_type", sa.Enum(name="disbursement_trigger", create_type=False), nullable=False),
-        sa.Column("status", sa.Enum(name="disbursement_status", create_type=False), nullable=False,
+        sa.Column("trigger_type", sa.Enum('submission_approval', 'milestone_1', 'milestone_2', 'final', name='disbursement_trigger'), nullable=False),
+        sa.Column("status", sa.Enum('pending', 'ready', 'disbursed', name='disbursement_status'), nullable=False,
                   server_default=sa.text("'pending'")),
         sa.Column("released_at", sa.DateTime(timezone=True)),
         sa.Column("bank_details", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
@@ -224,12 +178,12 @@ def upgrade() -> None:
         "reports",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("application_id", UUID(as_uuid=True), sa.ForeignKey("applications.id"), nullable=False),
-        sa.Column("report_type", sa.Enum(name="report_type", create_type=False), nullable=False),
+        sa.Column("report_type", sa.Enum('progress', 'final', name='report_type'), nullable=False),
         sa.Column("period_label", sa.String(100), nullable=False),
         sa.Column("form_data", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
         sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.Column("reviewed_at", sa.DateTime(timezone=True)),
-        sa.Column("status", sa.Enum(name="report_status", create_type=False), nullable=False,
+        sa.Column("status", sa.Enum('submitted', 'under_review', 'approved', 'rejected', name='report_status'), nullable=False,
                   server_default=sa.text("'submitted'")),
     )
     op.create_index("ix_reports_application_id", "reports", ["application_id"])
@@ -239,7 +193,7 @@ def upgrade() -> None:
         "compliance_analyses",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("report_id", UUID(as_uuid=True), sa.ForeignKey("reports.id"), nullable=False),
-        sa.Column("content_rating", sa.Enum(name="content_rating", create_type=False), nullable=False),
+        sa.Column("content_rating", sa.Enum('satisfactory', 'needs_attention', 'critical', name='content_rating'), nullable=False),
         sa.Column("financial_flags", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
         sa.Column("content_flags", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
         sa.Column("recommended_action", sa.Text),

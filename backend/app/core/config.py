@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     OTP_TTL_SECONDS: int = 600  # 10 minutes
 
     # ── AI Integration ────────────────────────────────────────────────────────
-    ANTHROPIC_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
 
     # ── CORS ──────────────────────────────────────────────────────────────────
     ALLOWED_ORIGINS: str = "http://localhost:5173"

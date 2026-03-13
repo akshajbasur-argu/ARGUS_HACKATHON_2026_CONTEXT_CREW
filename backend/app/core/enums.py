@@ -47,10 +47,13 @@ class ScreeningOutcome(str, enum.Enum):
 
 
 class DisbursementTrigger(str, enum.Enum):
+    inception = "inception"
+    mid_project = "mid_project"
+    final = "final"
+    milestone = "milestone"
     submission_approval = "submission_approval"
     milestone_1 = "milestone_1"
     milestone_2 = "milestone_2"
-    final = "final"
 
 
 class DisbursementStatus(str, enum.Enum):
@@ -69,6 +72,40 @@ class ReportStatus(str, enum.Enum):
     under_review = "under_review"
     approved = "approved"
     rejected = "rejected"
+
+
+class AwardDecision(str, enum.Enum):
+    approved = "approved"
+    rejected = "rejected"
+    waitlisted = "waitlisted"
+
+
+class LetterStatus(str, enum.Enum):
+    draft = "draft"
+    sent = "sent"
+
+
+class AgreementStatus(str, enum.Enum):
+    draft = "draft"
+    sent = "sent"
+    acknowledged = "acknowledged"
+
+
+class ExpenditureStatus(str, enum.Enum):
+    pending = "pending"
+    verified = "verified"
+    queried = "queried"
+
+
+class ComplianceAction(str, enum.Enum):
+    approved = "approved"
+    clarification = "clarification"
+    compliance_action = "compliance_action"
+
+
+class ComplianceSeverity(str, enum.Enum):
+    warning = "warning"
+    disbursement_hold = "disbursement_hold"
 
 
 class ContentRating(str, enum.Enum):

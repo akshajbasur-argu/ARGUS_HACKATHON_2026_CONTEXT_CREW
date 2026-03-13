@@ -40,6 +40,15 @@ import { ReviewerQueue } from '@/features/review/pages/ReviewerQueue'
 import { ReviewWorkspace } from '@/features/review/pages/ReviewWorkspace'
 import { CompletedReviews } from '@/features/review/pages/CompletedReviews'
 
+// ── Compliance pages ───────────────────────────────────────────────────────
+import { ReportSubmission } from '@/features/compliance/pages/ReportSubmission'
+import { ComplianceAnalysis } from '@/features/compliance/pages/ComplianceAnalysis'
+
+// ── Awards pages ───────────────────────────────────────────────────────────
+import { AwardDecision } from '@/features/awards/pages/AwardDecision'
+import { AgreementGeneration } from '@/features/awards/pages/AgreementGeneration'
+import { DisbursementSchedule } from '@/features/awards/pages/DisbursementSchedule'
+
 // ── Finance pages ───────────────────────────────────────────────────────────
 import { FundDashboard } from '@/features/finance/pages/FundDashboard'
 import { Disbursements } from '@/features/finance/pages/Disbursements'
@@ -90,7 +99,8 @@ export function AppRouter() {
         <Route path="apply/:programmeId/chat" element={<ChatbotIntake />} />
         <Route path="applications/:id" element={<ApplicationDetail />} />
         <Route path="documents" element={<DocumentVault />} />
-        <Route path="messages" element={<MessagesPage />} />
+        <Route path="messages/:appId" element={<MessagesPage />} />
+        <Route path="reports/:appId/submit" element={<ReportSubmission />} />
       </Route>
 
       {/* ── Staff (Programme Officer) routes ───────────────────────────── */}
@@ -108,6 +118,10 @@ export function AppRouter() {
         <Route path="staff/decisions" element={<DecisionQueue />} />
         <Route path="staff/reports" element={<ReportsPage />} />
         <Route path="staff/templates" element={<TemplatesPage />} />
+        <Route path="staff/awards/:id/decision" element={<AwardDecision />} />
+        <Route path="staff/awards/:id/agreement" element={<AgreementGeneration />} />
+        <Route path="staff/compliance/:reportId" element={<ComplianceAnalysis />} />
+        <Route path="staff/messages/:appId" element={<MessagesPage />} />
       </Route>
 
       {/* ── Reviewer routes ────────────────────────────────────────────── */}
@@ -133,6 +147,7 @@ export function AppRouter() {
       >
         <Route path="finance/dashboard" element={<FundDashboard />} />
         <Route path="finance/disbursements" element={<Disbursements />} />
+        <Route path="finance/disbursement-schedule" element={<DisbursementSchedule />} />
         <Route path="finance/expenditure" element={<ExpenditureRecords />} />
       </Route>
 

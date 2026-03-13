@@ -83,5 +83,19 @@ class UserWithOrgRead(UserRead):
     organisation: OrganisationRead | None = None
 
 
+class OrganisationUpdate(BaseModel):
+    """Update organisation profile — all fields optional."""
+
+    legal_name: str | None = Field(default=None, min_length=1, max_length=512)
+    registration_number: str | None = Field(
+        default=None, min_length=5, max_length=20, pattern=r"^[A-Za-z0-9]+$"
+    )
+    org_type: OrgType | None = None
+    year_established: int | None = Field(default=None, ge=1900, le=2026)
+    state: str | None = Field(default=None, max_length=100)
+    annual_budget_inr: Decimal | None = Field(default=None, gt=0)
+    contact_person: str | None = Field(default=None, max_length=255)
+
+
 class MessageResponse(BaseModel):
     detail: str

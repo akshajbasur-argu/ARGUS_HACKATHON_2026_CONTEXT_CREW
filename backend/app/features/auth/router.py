@@ -17,6 +17,8 @@ from app.features.auth.models import User
 from app.features.auth.schemas import (
     LoginRequest,
     MessageResponse,
+    OrganisationRead,
+    OrganisationUpdate,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
@@ -195,3 +197,40 @@ async def logout(
         await blacklist_refresh_token(jti, remaining)
 
     return MessageResponse(detail="Logged out successfully.")
+
+
+# ── GET /organisations/me ────────────────────────────────────────────────────
+
+
+@router.get("/organisations/me", response_model=OrganisationRead)
+async def get_my_org(
+    current_user: Annotated[User, Depends(require_auth)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get the current user's organisation profile."""
+    from app.features.auth.service import get_organisation_by_user
+
+    org = await get_organisation_by_user(db, current_user.id)
+    if org is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organisation not found",
+        )
+    return org
+
+
+# ── PUT /organisations/me ────────────────────────────────────────────────────
+
+
+@router.put("/organisations/me", response_model=OrganisationRead)
+async def update_my_org(
+    body: OrganisationUpdate,
+    current_user: Annotated[User, Depends(require_auth)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Create or update the current user's organisation profile."""
+    from app.features.auth.service import upsert_organisation
+
+    org = await upsert_organisation(db, current_user.id, body)
+    await db.commit()
+    return org
