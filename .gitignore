@@ -1,0 +1,47 @@
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+*.local
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+.Python
+
+# ── Alembic ───────────────────────────────────────────────────────────────────
+# Keep versions tracked; ignore compiled pyc inside them
+backend/alembic/versions/__pycache__/
+
+# ── Node ──────────────────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ── Media uploads ─────────────────────────────────────────────────────────────
+backend/media/*
+!backend/media/.gitkeep
+
+# ── OS / IDE ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+celerybeat-schedule
+celerybeat.pid
+
+# ── Database ──────────────────────────────────────────────────────────────────
+*.db
+*.sqlite3
