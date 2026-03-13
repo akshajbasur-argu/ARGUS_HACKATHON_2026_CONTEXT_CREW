@@ -33,7 +33,7 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     "sla-check": {
         "task": "worker.tasks.ai_tasks.task_sla_check",
-        "schedule": 3600.0,  # every 1 hour
+        "schedule": 300.0,  # every 5 minutes for hackathon
     },
     "report-reminders": {
         "task": "worker.tasks.notification_tasks.task_report_reminders",

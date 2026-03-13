@@ -100,6 +100,7 @@ export function AppRouter() {
         <Route path="apply/:programmeId/chat" element={<ChatbotIntake />} />
         <Route path="applications/:id" element={<ApplicationDetail />} />
         <Route path="documents" element={<DocumentVault />} />
+        <Route path="messages" element={<MessagesPage />} />
         <Route path="messages/:appId" element={<MessagesPage />} />
         <Route path="reports/:appId/submit" element={<ReportSubmission />} />
       </Route>
@@ -122,6 +123,7 @@ export function AppRouter() {
         <Route path="staff/awards/:id/decision" element={<AwardDecision />} />
         <Route path="staff/awards/:id/agreement" element={<AgreementGeneration />} />
         <Route path="staff/compliance/:reportId" element={<ComplianceAnalysis />} />
+        <Route path="staff/messages" element={<MessagesPage />} />
         <Route path="staff/messages/:appId" element={<MessagesPage />} />
       </Route>
 

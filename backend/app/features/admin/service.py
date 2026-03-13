@@ -17,11 +17,14 @@ from app.features.auth.models import User
 # ── User management ──────────────────────────────────────────────────────────
 
 
-async def list_users(db: AsyncSession) -> list[User]:
-    """List all users ordered by creation date."""
-    result = await db.execute(
-        select(User).order_by(User.created_at.desc())
-    )
+async def list_users(
+    db: AsyncSession, *, role: UserRole | None = None
+) -> list[User]:
+    """List users, optionally filtered by role, ordered by creation date."""
+    query = select(User).order_by(User.created_at.desc())
+    if role:
+        query = query.where(User.role == role)
+    result = await db.execute(query)
     return list(result.scalars().all())
 
 

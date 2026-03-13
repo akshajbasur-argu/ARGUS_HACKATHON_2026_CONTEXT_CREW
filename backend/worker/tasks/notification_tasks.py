@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 
 from worker.celery_app import celery_app
 
@@ -11,20 +12,61 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(name="worker.tasks.notification_tasks.task_send_notification")
 def task_send_notification(user_id: str, event_type: str, payload: dict) -> dict:
-    """Send a notification to a user.
+    """Send a notification to a user via console and email if configured."""
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.features.auth.models import User
+    from app.features.messaging.service import EVENT_TITLES
+    import asyncio
+    import smtplib
+    from email.message import EmailMessage
 
-    For the hackathon, this prints to console. In production, this would
-    dispatch to email, SMS, or push notification providers.
-    """
+    async def _get_user_email():
+        async with AsyncSessionLocal() as db:
+            from sqlalchemy import select
+            result = await db.execute(select(User.email, User.full_name).where(User.id == uuid.UUID(user_id)))
+            return result.one_or_none()
+
+    user_info = asyncio.run(_get_user_email())
+    if not user_info:
+        logger.error("Notification failed: User %s not found", user_id)
+        return {"status": "error", "message": "User not found"}
+
+    user_email, user_name = user_info
+    title = EVENT_TITLES.get(event_type, event_type.replace("_", " ").title())
+    message_body = payload.get("message") or f"You have a new notification: {title}"
+
+    # 1. Console Log (Always)
     print(f"\n{'=' * 60}")
     print(f"  NOTIFICATION")
-    print(f"  User:  {user_id}")
-    print(f"  Event: {event_type}")
-    print(f"  Data:  {payload}")
+    print(f"  Recipient: {user_name} <{user_email}>")
+    print(f"  Event:     {event_type}")
+    print(f"  Title:     {title}")
+    print(f"  Body:      {message_body}")
     print(f"{'=' * 60}\n")
 
-    logger.info("Notification sent — user=%s event=%s", user_id, event_type)
-    return {"status": "sent", "user_id": user_id, "event_type": event_type}
+    # 2. Email Delivery (If config exists)
+    if settings.SMTP_USER and settings.SMTP_PASSWORD:
+        try:
+            msg = EmailMessage()
+            msg.set_content(f"Hello {user_name},\n\n{message_body}\n\nBest regards,\nThe {settings.PROJECT_NAME} Team")
+            msg["Subject"] = f"[{settings.PROJECT_NAME}] {title}"
+            msg["From"] = f"{settings.PROJECT_NAME} <{settings.SMTP_USER}>"
+            msg["To"] = user_email
+
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+                server.starttls()
+                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                server.send_message(msg)
+            
+            logger.info("Email sent to %s for event %s", user_email, event_type)
+            return {"status": "sent", "method": "email", "user_id": user_id}
+        except Exception as exc:
+            logger.error("Failed to send email to %s: %s", user_email, exc)
+            return {"status": "logged_to_console", "error": str(exc), "user_id": user_id}
+
+    logger.info("Notification sent (console only) — user=%s event=%s", user_id, event_type)
+    return {"status": "sent_console", "user_id": user_id, "event_type": event_type}
 
 
 @celery_app.task(name="worker.tasks.notification_tasks.task_report_reminders")

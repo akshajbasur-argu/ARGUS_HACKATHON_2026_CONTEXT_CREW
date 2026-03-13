@@ -329,30 +329,29 @@ async def run_soft_checks(
     meta = programme.metadata_json or {}
     threshold = meta.get("screening_threshold", 60)
 
-    prompt = render_prompt(
-        "screening_soft_check.j2",
-        application_text=application_text,
-        grant_theme=grant_theme,
-        threshold=threshold,
-    )
-
-    system = (
-        "You are a grant screening assistant. Analyse the application and return "
-        "a JSON object exactly matching the requested schema. Return ONLY valid JSON."
-    )
-
     try:
-        result = await call_openai(system, prompt, max_tokens=1500, temperature=0.15)
-    except AIServiceError:
-        logger.warning("AI soft-check failed for app %s — using defaults", application.id)
+        from app.ai.openai_client import render_and_call
+
+        result = await render_and_call(
+            "screening_soft_check.j2",
+            {
+                "application_text": application_text,
+                "grant_theme": grant_theme,
+                "threshold": threshold,
+            },
+            max_tokens=1500,
+            temperature=0.15,
+        )
+    except Exception as exc:
+        logger.error("AI soft-check failed for app %s: %s", application.id, exc)
         result = {
             "thematic_score": 50,
-            "thematic_reasoning": "AI analysis unavailable — manual review required",
+            "thematic_reasoning": f"AI analysis failed: {exc} — manual review required",
             "narrative_coherence": 50,
-            "narrative_reasoning": "AI analysis unavailable — manual review required",
+            "narrative_reasoning": "AI analysis failed — manual review required",
             "beneficiary_specificity": "vague",
             "measurable_outcome": False,
-            "soft_flags": [{"flag": "AI service unavailable — manual review recommended", "severity": "medium"}],
+            "soft_flags": [{"flag": f"AI Error: {exc}", "severity": "medium"}],
         }
 
     return result

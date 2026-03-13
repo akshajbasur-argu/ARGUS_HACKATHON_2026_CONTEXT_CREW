@@ -169,8 +169,9 @@ async def submit(
         from worker.tasks.ai_tasks import task_screen_application
 
         task_screen_application.delay(str(application_id))
-    except Exception:
-        pass  # Screening will be picked up by periodic check
+    except Exception as exc:
+        logger.error("Failed to dispatch screening task for %s: %s", application_id, exc)
+        # Screening will be picked up by periodic check or manual retry
 
     await write_audit_log(
         db,

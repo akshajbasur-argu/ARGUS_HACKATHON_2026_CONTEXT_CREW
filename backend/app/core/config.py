@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     MEDIA_ROOT: str = "/app/media"
     MAX_UPLOAD_SIZE_MB: int = 50
 
+    # ── SMTP Notifications ────────────────────────────────────────────────────
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+
     # ── Derived properties ────────────────────────────────────────────────────
     @property
     def allowed_origins_list(self) -> List[str]:

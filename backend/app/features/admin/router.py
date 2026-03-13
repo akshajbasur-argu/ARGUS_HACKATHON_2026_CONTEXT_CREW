@@ -10,7 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.features.auth.dependencies import require_admin
+from app.core.enums import UserRole
+from app.features.auth.dependencies import require_admin, require_role
 from app.features.auth.models import User
 from app.features.auth.service import write_audit_log
 from app.features.admin import schemas, service
@@ -23,11 +24,12 @@ router = APIRouter()
 
 @router.get("/users", response_model=list[schemas.UserAdminRead])
 async def list_users(
-    _admin: Annotated[User, Depends(require_admin)],
+    _user: Annotated[User, Depends(require_role(UserRole.platform_admin, UserRole.program_officer))],
     db: Annotated[AsyncSession, Depends(get_db)],
+    role: UserRole | None = Query(None),
 ):
-    """List all users (admin only)."""
-    users = await service.list_users(db)
+    """List users with optional role filter (admin or program officer)."""
+    users = await service.list_users(db, role=role)
     return users
 
 

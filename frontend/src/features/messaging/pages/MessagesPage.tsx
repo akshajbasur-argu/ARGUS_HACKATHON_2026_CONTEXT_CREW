@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { SectionCard } from '@/shared/components/SectionCard'
 import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
 import { cn } from '@/shared/utils/cn'
 import { apiClient } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
+import { StatusPill } from '@/shared/components/StatusPill'
 
 interface MessageItem {
   id: string
@@ -18,11 +19,18 @@ interface MessageItem {
   sent_at: string
 }
 
+interface ApplicationShort {
+  id: string
+  reference_number: string
+  programme_name: string
+  status: string
+}
+
 function formatMsgTime(value: string): string {
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
   const day = String(d.getDate()).padStart(2, '0')
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   const month = months[d.getMonth()]
   const year = d.getFullYear()
   const hours = String(d.getHours()).padStart(2, '0')
@@ -32,11 +40,13 @@ function formatMsgTime(value: string): string {
 
 export function MessagesPage() {
   const { appId } = useParams<{ appId: string }>()
+  const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const isApplicant = user?.role === 'applicant'
   const isStaff = !isApplicant
 
   const [messages, setMessages] = useState<MessageItem[]>([])
+  const [apps, setApps] = useState<ApplicationShort[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -46,26 +56,34 @@ export function MessagesPage() {
 
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  const fetchMessages = useCallback(async () => {
-    if (!appId) return
+  const fetchData = useCallback(async () => {
     setLoading(true)
+    setError('')
     try {
-      const res = await apiClient.get(`/v1/messaging/messages/${appId}`)
-      setMessages(res.data)
+      if (appId) {
+        const res = await apiClient.get(`/v1/messaging/messages/${appId}`)
+        setMessages(res.data)
+      } else {
+        const endpoint = isApplicant ? '/v1/applications' : '/v1/staff/applications'
+        const res = await apiClient.get(endpoint)
+        setApps(res.data)
+      }
     } catch {
-      setError('Failed to load messages.')
+      setError('Failed to load data.')
     } finally {
       setLoading(false)
     }
-  }, [appId])
+  }, [appId, isApplicant])
 
   useEffect(() => {
-    fetchMessages()
-  }, [fetchMessages])
+    fetchData()
+  }, [fetchData])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    if (appId) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, appId])
 
   const handleSend = useCallback(async () => {
     if (!replyBody.trim() || !appId) return
@@ -78,19 +96,63 @@ export function MessagesPage() {
       })
       setReplyBody('')
       setIsInternal(false)
-      await fetchMessages()
+      // Re-fetch messages
+      const res = await apiClient.get(`/v1/messaging/messages/${appId}`)
+      setMessages(res.data)
     } catch {
       setError('Failed to send message.')
     } finally {
       setSending(false)
     }
-  }, [replyBody, isInternal, appId, fetchMessages])
+  }, [replyBody, isInternal, appId])
 
   if (!appId) {
     return (
       <div className="mx-auto max-w-4xl">
         <PageHeader title="Messages" breadcrumbs={[{ label: 'Messages' }]} />
-        <p className="font-body text-sm text-bark">Select an application to view messages.</p>
+
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <LoadingSpinner label="Loading applications..." />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="font-body text-sm text-bark mb-6">
+              Select an application thread to view messages and communicate with the committee.
+            </p>
+
+            {apps.length === 0 ? (
+              <SectionCard>
+                <div className="py-12 text-center">
+                  <p className="font-body text-sm text-sand">No active application threads found.</p>
+                </div>
+              </SectionCard>
+            ) : (
+              <div className="grid gap-4">
+                {apps.map((app) => (
+                  <button
+                    key={app.id}
+                    onClick={() => navigate(`${isStaff ? '/staff' : ''}/messages/${app.id}`)}
+                    className="flex w-full items-center justify-between rounded-lg border border-sand bg-white p-4 transition-all hover:border-clay hover:shadow-md text-left"
+                  >
+                    <div>
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="font-mono text-xs font-bold text-soil">{app.reference_number}</span>
+                        <StatusPill status={app.status} />
+                      </div>
+                      <h3 className="font-body text-sm font-semibold text-bark">{app.programme_name}</h3>
+                    </div>
+                    <div className="text-clay">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -108,7 +170,7 @@ export function MessagesPage() {
       <PageHeader
         title="Message Thread"
         breadcrumbs={[
-          { label: 'Messages', href: '/messages' },
+          { label: 'Messages', href: isStaff ? '/staff/messages' : '/messages' },
           { label: `Application ${appId.slice(0, 8)}...` },
         ]}
       />

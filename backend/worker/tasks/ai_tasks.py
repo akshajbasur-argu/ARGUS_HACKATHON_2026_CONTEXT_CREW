@@ -17,7 +17,11 @@ logger = logging.getLogger(__name__)
 
 def _run_async(coro):  # type: ignore[no-untyped-def]
     """Run an async coroutine from a sync Celery task."""
-    return asyncio.run(coro)
+    try:
+        return asyncio.run(coro)
+    except Exception as exc:
+        logger.error("Async execution failed: %s", exc, exc_info=True)
+        raise
 
 
 async def _screen(application_id: uuid.UUID) -> str:
@@ -106,10 +110,27 @@ def task_analyse_report(self, report_id: str) -> dict:  # type: ignore[override]
 
 @celery_app.task(name="worker.tasks.ai_tasks.task_sla_check")
 def task_sla_check() -> dict:
-    """Periodic: check applications approaching SLA deadlines.
+    """Periodic: pick up 'submitted' applications that missed screening."""
+    logger.info("SLA check: scanning for unscreened applications")
 
-    TODO: Query applications stuck in screening/review beyond threshold,
-    escalate to programme officers.
-    """
-    logger.info("SLA check running")
-    return {"status": "ok", "checked": 0}
+    from app.core.database import AsyncSessionLocal
+    from app.core.enums import ApplicationStatus
+    from app.features.applications.models import Application
+    from sqlalchemy import select
+
+    async def _find_unscreened():
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Application.id).where(Application.status == ApplicationStatus.submitted)
+            )
+            return result.scalars().all()
+
+    try:
+        app_ids = _run_async(_find_unscreened())
+        for app_id in app_ids:
+            logger.info("SLA RECOVERY: triggering screening for %s", app_id)
+            task_screen_application.delay(str(app_id))
+        return {"status": "ok", "recovered": len(app_ids)}
+    except Exception as exc:
+        logger.error("SLA check failed: %s", exc)
+        return {"status": "error", "message": str(exc)}
