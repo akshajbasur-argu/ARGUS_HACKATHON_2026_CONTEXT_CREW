@@ -1,6 +1,6 @@
 """AI-powered review package generator — full implementation.
 
-Makes 3 parallel Claude calls (summary, scoring, risk_flags) via asyncio.gather(),
+Makes 3 parallel OpenAI calls (summary, scoring, risk_flags) via asyncio.gather(),
 then assembles and persists a ReviewPackage for reviewer consumption.
 """
 
@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.anthropic_client import call_claude, render_prompt
+from app.ai.openai_client import call_openai, render_prompt
 from app.features.applications.models import Application
 from app.features.auth.service import write_audit_log
 from app.features.programmes.models import GrantProgramme
@@ -58,7 +58,7 @@ async def generate_review_package(
     Steps:
       1. Load application + programme from DB
       2. Build a full application JSON context
-      3. Make 3 parallel Claude calls (summary, scoring, risk_flags)
+      3. Make 3 parallel OpenAI calls (summary, scoring, risk_flags)
       4. Parse and assemble results
       5. Save ReviewPackage to DB
       6. Notify assigned reviewers
@@ -114,7 +114,7 @@ async def generate_review_package(
     ])
     rubric_json = json.dumps(rubric_dimensions, indent=2)
 
-    # ── 3. Make 3 parallel Claude calls ─────────────────────────────────────
+    # ── 3. Make 3 parallel OpenAI calls ─────────────────────────────────────
 
     summary_coro = _call_summary(full_application_json)
     scoring_coro = _call_scoring(programme.name, rubric_json, full_application_json)
@@ -192,21 +192,21 @@ async def generate_review_package(
     return package
 
 
-# ── Individual Claude call helpers ──────────────────────────────────────────
+# ── Individual OpenAI call helpers ──────────────────────────────────────────
 
 
 async def _call_summary(full_application_json: str) -> dict:
-    """Call Claude for structured application summary."""
+    """Call OpenAI for structured application summary."""
     system = (
         "You are a grant review analyst preparing a structured briefing for expert reviewers. "
         "Summarise the application concisely and factually. Do not editorialize. " + _SYSTEM_JSON
     )
     user = render_prompt("review_summary.j2", full_application_json=full_application_json)
-    return await call_claude(system, user, max_tokens=2000)
+    return await call_openai(system, user, max_tokens=2000)
 
 
 async def _call_scoring(programme_name: str, rubric_json: str, full_application_json: str) -> dict:
-    """Call Claude for dimension-by-dimension scoring."""
+    """Call OpenAI for dimension-by-dimension scoring."""
     system = (
         "You are a grant scoring expert. Score each dimension on a 1-5 scale using the rubric. "
         "Never score without citing specific application text. " + _SYSTEM_JSON
@@ -217,11 +217,11 @@ async def _call_scoring(programme_name: str, rubric_json: str, full_application_
         rubric_json=rubric_json,
         full_application_json=full_application_json,
     )
-    return await call_claude(system, user, max_tokens=2000)
+    return await call_openai(system, user, max_tokens=2000)
 
 
 async def _call_risk_flags(budget_json: str, full_application_json: str) -> dict:
-    """Call Claude for risk flag identification."""
+    """Call OpenAI for risk flag identification."""
     system = (
         "You are a grant risk analyst. Identify genuine risks with supporting evidence. "
         "Only flag real concerns — do not invent issues. " + _SYSTEM_JSON
@@ -231,7 +231,7 @@ async def _call_risk_flags(budget_json: str, full_application_json: str) -> dict
         budget_json=budget_json,
         full_application_json=full_application_json,
     )
-    return await call_claude(system, user, max_tokens=1500)
+    return await call_openai(system, user, max_tokens=1500)
 
 
 # ── Reviewer notification ───────────────────────────────────────────────────

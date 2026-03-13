@@ -1,6 +1,6 @@
 """AI-powered compliance analysis agent — full implementation.
 
-Runs deterministic arithmetic checks + 2 parallel Claude calls
+Runs deterministic arithmetic checks + 2 parallel OpenAI calls
 (content analysis, financial analysis), then assembles a ComplianceAnalysis.
 """
 
@@ -16,7 +16,7 @@ from decimal import Decimal
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.anthropic_client import AIServiceError, call_claude, render_prompt
+from app.ai.openai_client import AIServiceError, call_openai, render_prompt
 from app.core.enums import ContentRating, DisbursementStatus, ReportStatus
 from app.features.applications.models import Application
 from app.features.auth.service import write_audit_log
@@ -315,7 +315,7 @@ def _run_arithmetic_checks(report_data: dict) -> list[str]:
 async def _call_content_analysis(
     approved_summary: str, report_json: str
 ) -> dict:
-    """Call Claude for content compliance analysis."""
+    """Call OpenAI for content compliance analysis."""
     system = (
         "You are a grant compliance officer reviewing a progress report. "
         "Compare against the approved application. Be factual. " + _SYSTEM_JSON
@@ -325,13 +325,13 @@ async def _call_content_analysis(
         approved_summary=approved_summary,
         report_json=report_json,
     )
-    return await call_claude(system, user, max_tokens=2000)
+    return await call_openai(system, user, max_tokens=2000)
 
 
 async def _call_financial_analysis(
     budget_approved: str, expenditure_data: str, timeline_json: str
 ) -> dict:
-    """Call Claude for financial compliance analysis."""
+    """Call OpenAI for financial compliance analysis."""
     system = (
         "You are a grant financial compliance analyst. "
         "Check expenditure against approved budget. Be precise with numbers. "
@@ -343,7 +343,7 @@ async def _call_financial_analysis(
         expenditure_data=expenditure_data,
         timeline_json=timeline_json,
     )
-    return await call_claude(system, user, max_tokens=2000)
+    return await call_openai(system, user, max_tokens=2000)
 
 
 # ── Context builders ─────────────────────────────────────────────────────────

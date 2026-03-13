@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.ai.anthropic_client import AIServiceError, call_claude, render_prompt
+from app.ai.openai_client import AIServiceError, call_openai, render_prompt
 from app.core.enums import ApplicationStatus, ScreeningOutcome
 from app.features.applications.models import Application
 from app.features.auth.models import Organisation
@@ -315,7 +315,7 @@ async def run_soft_checks(
     application: Application,
     programme: GrantProgramme,
 ) -> dict[str, Any]:
-    """Call Claude to analyse narrative quality, thematic alignment, etc."""
+    """Call OpenAI to analyse narrative quality, thematic alignment, etc."""
     form = _get_form(application)
 
     # Build application text for AI analysis
@@ -342,7 +342,7 @@ async def run_soft_checks(
     )
 
     try:
-        result = await call_claude(system, prompt, max_tokens=1500, temperature=0.15)
+        result = await call_openai(system, prompt, max_tokens=1500, temperature=0.15)
     except AIServiceError:
         logger.warning("AI soft-check failed for app %s — using defaults", application.id)
         result = {

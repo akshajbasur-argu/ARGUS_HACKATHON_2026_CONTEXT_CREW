@@ -1,7 +1,7 @@
 """Chatbot-guided application intake service.
 
 Drives a conversational flow that collects application fields one at a time
-using Claude, with programme-specific field definitions.
+using OpenAI, with programme-specific field definitions.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.anthropic_client import AIServiceError, call_claude, render_prompt
+from app.ai.openai_client import AIServiceError, call_openai, render_prompt
 from app.features.applications.schemas import (
     ChatIntakeRequest,
     ChatIntakeResponse,
@@ -121,7 +121,7 @@ async def handle_chat_intake(
 
     1. Load programme to get field definitions
     2. Extract already-captured fields from conversation history
-    3. Call Claude with chatbot_intake.j2 prompt
+    3. Call OpenAI with chatbot_intake.j2 prompt
     4. Parse response and return structured ChatIntakeResponse
     """
     # Load programme
@@ -172,7 +172,7 @@ async def handle_chat_intake(
             {"role": "user", "content": "Hi, I'd like to start my grant application."}
         ]
 
-    # Render prompt and call Claude
+    # Render prompt and call OpenAI
     user_prompt = render_prompt(
         "chatbot_intake.j2",
         programme_name=programme.name,
@@ -185,7 +185,7 @@ async def handle_chat_intake(
     )
 
     try:
-        ai_result = await call_claude(
+        ai_result = await call_openai(
             _SYSTEM_PROMPT, user_prompt, max_tokens=1000, temperature=0.3
         )
     except AIServiceError:
