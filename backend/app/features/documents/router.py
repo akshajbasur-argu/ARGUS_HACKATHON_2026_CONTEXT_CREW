@@ -76,7 +76,7 @@ async def remove_vault_document(
     doc_id: uuid.UUID,
     user: Annotated[User, Depends(require_role(UserRole.applicant))],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> None:
+):
     """Delete a document from the applicant's vault."""
     deleted = await delete_vault_document(db, doc_id, user.id)
     if not deleted:
