@@ -152,6 +152,13 @@ PROGRAMMES = [
                 {"tranche": "Mid-term instalment 2", "percent": 25, "trigger": "milestone_2"},
                 {"tranche": "Final instalment",      "percent": 15, "trigger": "final"},
             ],
+            "climate_vulnerable_districts": [
+                "Kutch", "Saurashtra", "Sundarbans", "Chilika", "Puri",
+                "Konkan Coast", "Lakshadweep", "Andaman", "Brahmaputra Valley",
+                "Vidarbha", "Marathwada", "Bundelkhand", "Rayalaseema",
+                "North Bihar Plains", "Assam Flood Plains", "Uttarakhand Hills",
+                "Himachal Pradesh Hills", "Thar Desert", "Chambal Valley", "Coromandel Coast",
+            ],
         },
     },
 ]

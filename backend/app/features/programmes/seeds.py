@@ -210,6 +210,13 @@ PROGRAMME_SEEDS: list[dict] = [
                 {"milestone": "Seasonal review passed", "pct": 30},
                 {"milestone": "Completion report accepted", "pct": 20},
             ],
+            "climate_vulnerable_districts": [
+                "Kutch", "Saurashtra", "Sundarbans", "Chilika", "Puri",
+                "Konkan Coast", "Lakshadweep", "Andaman", "Brahmaputra Valley",
+                "Vidarbha", "Marathwada", "Bundelkhand", "Rayalaseema",
+                "North Bihar Plains", "Assam Flood Plains", "Uttarakhand Hills",
+                "Himachal Pradesh Hills", "Thar Desert", "Chambal Valley", "Coromandel Coast",
+            ],
         },
     },
 ]
@@ -299,6 +306,16 @@ def _check_ecag(org_type: str, district: str, amount: Decimal) -> list[dict]:  #
         })
 
     return failures
+
+
+# ── Climate-vulnerable districts for ECAG geographic prioritisation ───────────
+CLIMATE_VULNERABLE_DISTRICTS: list[str] = [
+    "Kutch", "Saurashtra", "Sundarbans", "Chilika", "Puri",
+    "Konkan Coast", "Lakshadweep", "Andaman", "Brahmaputra Valley",
+    "Vidarbha", "Marathwada", "Bundelkhand", "Rayalaseema",
+    "North Bihar Plains", "Assam Flood Plains", "Uttarakhand Hills",
+    "Himachal Pradesh Hills", "Thar Desert", "Chambal Valley", "Coromandel Coast",
+]
 
 
 RULE_CHECKERS: dict[str, callable] = {

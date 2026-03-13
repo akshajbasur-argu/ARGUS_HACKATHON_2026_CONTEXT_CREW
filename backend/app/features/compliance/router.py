@@ -67,7 +67,16 @@ async def submit_report_endpoint(
             form_data=body.form_data,
         )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        msg = str(e)
+        if msg.startswith("auditor_certificate_required:"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "auditor_certificate_required",
+                    "message": msg.split(":", 1)[1].strip(),
+                },
+            )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
     await write_audit_log(
         db,

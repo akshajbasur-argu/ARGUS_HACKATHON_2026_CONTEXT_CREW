@@ -219,3 +219,82 @@ async def get_dashboard_data(db: AsyncSession) -> dict:
         "grants_by_status": dict(grants_by_status),
         "grants": grants,
     }
+
+
+async def get_programme_dashboard_data(db: AsyncSession) -> dict:
+    """Aggregate finance data grouped by programme for the programme overview tab."""
+    # Get all applications joined with programmes
+    apps_result = await db.execute(
+        select(Application, GrantProgramme)
+        .join(GrantProgramme, Application.programme_id == GrantProgramme.id)
+    )
+    app_rows = apps_result.all()
+
+    # Get all disbursements
+    all_disb_result = await db.execute(select(Disbursement))
+    all_disb = all_disb_result.scalars().all()
+
+    disb_by_app: dict[uuid.UUID, dict] = defaultdict(lambda: {"committed": Decimal("0"), "disbursed": Decimal("0")})
+    for d in all_disb:
+        disb_by_app[d.application_id]["committed"] += d.amount_inr
+        if d.status == DisbursementStatus.disbursed:
+            disb_by_app[d.application_id]["disbursed"] += d.amount_inr
+
+    # Get all expenditures
+    all_exp_result = await db.execute(select(Expenditure))
+    all_exp = all_exp_result.scalars().all()
+
+    exp_by_app: dict[uuid.UUID, Decimal] = defaultdict(Decimal)
+    for e in all_exp:
+        exp_by_app[e.application_id] += e.amount_inr
+
+    # Aggregate per-programme
+    prog_agg: dict[str, dict] = {}
+    total_committed = Decimal("0")
+    total_disbursed = Decimal("0")
+    total_spent = Decimal("0")
+    grants_by_status: dict[str, int] = defaultdict(int)
+
+    for app, programme in app_rows:
+        code = programme.code
+        if code not in prog_agg:
+            prog_agg[code] = {
+                "programme_code": code,
+                "programme_name": programme.name,
+                "committed": Decimal("0"),
+                "disbursed": Decimal("0"),
+                "spent": Decimal("0"),
+                "grant_count": 0,
+            }
+
+        app_disb = disb_by_app.get(app.id, {"committed": Decimal("0"), "disbursed": Decimal("0")})
+        committed = app_disb["committed"]
+        disbursed = app_disb["disbursed"]
+        spent = exp_by_app.get(app.id, Decimal("0"))
+
+        prog_agg[code]["committed"] += committed
+        prog_agg[code]["disbursed"] += disbursed
+        prog_agg[code]["spent"] += spent
+        prog_agg[code]["grant_count"] += 1
+
+        total_committed += committed
+        total_disbursed += disbursed
+        total_spent += spent
+        grants_by_status[app.status.value] += 1
+
+    # Compute utilisation percentages
+    per_programme = []
+    for entry in sorted(prog_agg.values(), key=lambda x: x["programme_code"]):
+        pct = float(entry["spent"] / entry["committed"] * 100) if entry["committed"] > 0 else 0.0
+        per_programme.append({
+            **entry,
+            "utilisation_pct": round(pct, 1),
+        })
+
+    return {
+        "total_committed_inr": total_committed,
+        "total_disbursed_inr": total_disbursed,
+        "total_reported_expenditure_inr": total_spent,
+        "grants_by_status": dict(grants_by_status),
+        "per_programme": per_programme,
+    }
