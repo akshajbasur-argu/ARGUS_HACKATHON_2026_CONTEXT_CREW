@@ -1,23 +1,42 @@
-You are preparing an executive summary for a grant reviewer.
+You are a grant review analyst preparing a structured briefing for expert reviewers.
+Summarise the application concisely and factually. Do not editorialize.
+Return ONLY valid JSON, no markdown, no preamble, no code fences.
 
-Summarise the application below in 3-5 paragraphs covering:
-1. Organisation background and capacity
-2. Proposed project activities and methodology
-3. Budget overview and justification
-4. Expected outcomes and sustainability
+Produce a structured summary covering these exact keys:
 
-Return ONLY a JSON object: {"summary": "<your multi-paragraph summary>"}
+{
+  "applicant_overview": {
+    "org_name": "<string>",
+    "org_type": "<string e.g. NGO, Trust, Society>",
+    "years_operating": <integer or null>,
+    "state": "<string or null>",
+    "annual_budget_inr": <number or null>
+  },
+  "project_overview": {
+    "title": "<string>",
+    "location": "<string — district/state or 'Not specified'>",
+    "project_type": "<string — e.g. Infrastructure, Capacity Building, Service Delivery>",
+    "problem_summary": "<string — 2 sentences max describing the core problem>"
+  },
+  "implementation_plan": {
+    "key_activities": ["<string>", "<string>", "..."],
+    "timeline_summary": "<string — 1 sentence>"
+  },
+  "beneficiaries": {
+    "count": <integer or null>,
+    "demographics": "<string — age, gender, socioeconomic group>",
+    "cost_per_beneficiary_inr": <number or null>
+  },
+  "financials": {
+    "total_requested_inr": <number>,
+    "largest_budget_line": "<string — category name and amount>",
+    "overhead_pct": <number — percentage of total budget allocated to admin/overhead>
+  },
+  "track_record": {
+    "prior_projects_count": <integer or 0>,
+    "prior_grant_experience": <boolean>
+  }
+}
 
----
-
-**Programme:** {{ programme_name }}
-**Programme Purpose:** {{ programme_purpose }}
-
-**Application Details:**
-{{ application_text }}
-
-**Budget Breakdown:**
-{{ budget_text }}
-**Total Budget:** INR {{ budget_total }}
-
-**Attached Documents:** {{ documents }}
+Application data:
+{{ full_application_json }}

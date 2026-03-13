@@ -1,4 +1,4 @@
-"""Applications API — CRUD, submit, documents, timeline."""
+"""Applications API — CRUD, submit, documents, timeline, chatbot intake."""
 
 from __future__ import annotations
 
@@ -10,12 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.enums import ApplicationStatus, UserRole
+from app.features.applications.chatbot_service import handle_chat_intake
 from app.features.applications.schemas import (
     ApplicationCreate,
     ApplicationListItem,
     ApplicationRead,
     ApplicationTimeline,
     ApplicationUpdate,
+    ChatIntakeRequest,
+    ChatIntakeResponse,
     DocumentAttach,
 )
 from app.features.applications.service import (
@@ -32,6 +35,24 @@ from app.features.auth.models import User
 from app.features.auth.service import write_audit_log
 
 router = APIRouter()
+
+
+# ── POST /chat — AI-guided conversational intake ────────────────────────────
+
+
+@router.post("/chat", response_model=ChatIntakeResponse)
+async def chatbot_intake(
+    body: ChatIntakeRequest,
+    user: Annotated[User, Depends(require_role(UserRole.applicant))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ChatIntakeResponse:
+    """AI-guided conversational application intake.
+
+    Collects application fields one at a time through natural conversation.
+    The applicant sends messages and the assistant guides them through each
+    required field for the selected programme.
+    """
+    return await handle_chat_intake(body, db)
 
 
 # ── GET / — list my applications ─────────────────────────────────────────────

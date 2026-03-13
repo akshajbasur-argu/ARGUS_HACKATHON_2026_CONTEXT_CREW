@@ -21,10 +21,14 @@ from app.ai.anthropic_client import AIServiceError, call_claude, render_prompt
 from app.core.enums import ApplicationStatus, ScreeningOutcome
 from app.features.applications.models import Application
 from app.features.auth.models import Organisation
+from app.features.auth.service import write_audit_log
 from app.features.programmes.models import GrantProgramme
 from app.features.screening.models import ScreeningReport
 
 logger = logging.getLogger(__name__)
+
+# Default thematic threshold percentage — overridden by programme metadata
+_DEFAULT_THRESHOLD_PCT = 50
 
 
 # ── Types ────────────────────────────────────────────────────────────────────
@@ -362,7 +366,7 @@ async def run_screening(
     db: AsyncSession,
 ) -> ScreeningReport:
     """Run full screening (hard + soft checks) and persist the report."""
-    logger.info("SCREENING: %s", application_id)
+    logger.info("SCREENING START: %s", application_id)
 
     # Load application with documents
     result = await db.execute(
@@ -435,9 +439,56 @@ async def run_screening(
         application.status = ApplicationStatus.eligible
     elif overall == ScreeningOutcome.ineligible:
         application.status = ApplicationStatus.ineligible
-
     # needs_review stays in "screening" — officer decides
 
     await db.flush()
-    logger.info("SCREENING COMPLETE: %s → %s", application_id, overall.value)
+
+    # Audit log
+    await write_audit_log(
+        db,
+        actor_id=None,
+        action="screening_completed",
+        object_type="application",
+        object_id=str(application_id),
+        metadata={
+            "screening_report_id": str(report.id),
+            "overall_result": overall.value,
+            "thematic_score": float(thematic_score),
+            "narrative_score": float(narrative_score),
+            "hard_checks_passed": all_hard_passed,
+        },
+    )
+
+    # Notify programme officers
+    _notify_screening_complete(application, report)
+
+    logger.info(
+        "SCREENING COMPLETE: %s -> %s (thematic=%s, narrative=%s)",
+        application_id,
+        overall.value,
+        thematic_score,
+        narrative_score,
+    )
     return report
+
+
+# ── Notification helper ─────────────────────────────────────────────────────
+
+
+def _notify_screening_complete(application: Application, report: ScreeningReport) -> None:
+    """Fire-and-forget Celery task to notify programme officers."""
+    try:
+        from worker.tasks.notification_tasks import task_send_notification
+
+        task_send_notification.delay(
+            user_id=str(application.applicant_id),
+            event_type="screening_completed",
+            payload={
+                "application_id": str(application.id),
+                "reference_number": application.reference_number,
+                "result": report.overall_result.value,
+            },
+        )
+    except Exception:
+        # Don't let notification failure break the screening flow
+        logger.warning("Failed to dispatch screening notification", exc_info=True)

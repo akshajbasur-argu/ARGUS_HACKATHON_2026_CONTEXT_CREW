@@ -1,32 +1,33 @@
-You are scoring a grant application for "{{ programme_name }}".
+You are a grant scoring expert. Score each rubric dimension on a 1-5 scale.
+You MUST cite specific text from the application to justify every score.
+Never assign a score without providing an evidence quote.
+Return ONLY valid JSON, no markdown, no preamble, no code fences.
 
-Score each dimension on a 1-5 scale:
-  1 = Very Poor, 2 = Poor, 3 = Adequate, 4 = Good, 5 = Excellent
+Grant Programme: {{ programme_name }}
 
-Scoring rubric dimensions:
-{{ rubric }}
+Scoring Rubric (dimensions and descriptions):
+{{ rubric_json }}
 
-Also identify any risk flags (budget concerns, feasibility issues, etc.).
+Scale:
+  1 = Very Poor — does not address the dimension
+  2 = Weak — addresses minimally with major gaps
+  3 = Adequate — meets basic requirements with some gaps
+  4 = Strong — well-developed with minor gaps
+  5 = Excellent — comprehensive, compelling, no gaps
 
-Return ONLY a JSON object with this exact structure:
+Output exactly this schema:
+
 {
-  "scores": {
-    "<dimension_key>": <score 1-5>,
-    ...
-  },
-  "justifications": {
-    "<dimension_key>": "<1-2 sentence reasoning>",
-    ...
-  },
-  "risk_flags": [
-    {"type": "<category>", "description": "<brief concern>", "severity": "<high|medium|low>"}
+  "scores": [
+    {
+      "dimension": "<string — dimension name from rubric>",
+      "score": <integer 1-5>,
+      "justification": "<string — max 80 words explaining the score>",
+      "evidence_quote": "<string — exact text from application, max 40 words>",
+      "evidence_section": "<string — section name e.g. Problem Statement, Budget, Outcomes>"
+    }
   ]
 }
 
----
-
-**Application Details:**
-{{ application_text }}
-
-**Budget Breakdown:**
-{{ budget_text }}
+Application data:
+{{ full_application_json }}
