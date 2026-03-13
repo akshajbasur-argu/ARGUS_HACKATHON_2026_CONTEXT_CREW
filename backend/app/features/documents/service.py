@@ -61,7 +61,7 @@ async def validate_upload(file: UploadFile, doc_type: str) -> None:
         )
 
     # Read size check — seek to end, check position, seek back
-    await file.seek(0, 2)  # SEEK_END
+    file.file.seek(0, 2)  # SEEK_END
     size = file.file.tell()
     await file.seek(0)
 
