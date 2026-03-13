@@ -58,3 +58,18 @@ class AuditLogPage(BaseModel):
 
 class MessageResponse(BaseModel):
     detail: str
+
+
+class TemplateRead(BaseModel):
+    id: uuid.UUID
+    code: str
+    name: str
+    body_text: str
+    required_fields: list[str] = []
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TemplateUpdate(BaseModel):
+    body_text: str = Field(..., min_length=10)

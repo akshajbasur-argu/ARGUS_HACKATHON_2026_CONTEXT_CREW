@@ -547,6 +547,84 @@ async def list_post_review_queue(
     return items
 
 
+async def get_post_review_item(
+    db: AsyncSession,
+    application_id: uuid.UUID,
+) -> PostReviewQueueItem | None:
+    """Get post-review detail for a single application."""
+    q = (
+        select(Application, GrantProgramme, User.full_name.label("applicant_name"))
+        .join(GrantProgramme, GrantProgramme.id == Application.programme_id)
+        .join(User, User.id == Application.applicant_id)
+        .where(Application.id == application_id)
+    )
+    result = await db.execute(q)
+    row = result.one_or_none()
+    if row is None:
+        return None
+
+    application, programme, applicant_name = row
+
+    # Load assignments with scores
+    assign_result = await db.execute(
+        select(ReviewAssignment)
+        .options(selectinload(ReviewAssignment.scores))
+        .where(ReviewAssignment.application_id == application_id)
+    )
+    assignments = assign_result.scalars().all()
+
+    rubric = get_rubric(programme)
+    reviewer_scores: list[ReviewerScoreSet] = []
+    all_composites: list[Decimal] = []
+
+    for a in assignments:
+        rev_result = await db.execute(
+            select(User.full_name).where(User.id == a.reviewer_id)
+        )
+        rev_name = rev_result.scalar_one()
+
+        comp = _compute_composite(a.scores, rubric)
+        if comp is not None:
+            all_composites.append(comp)
+
+        reviewer_scores.append(ReviewerScoreSet(
+            reviewer_id=a.reviewer_id,
+            reviewer_name=rev_name,
+            completed_at=a.completed_at,
+            scores=[
+                ScoreDimension(
+                    dimension=s.dimension,
+                    label=next((r.get("label", s.dimension) for r in rubric if r["dimension"] == s.dimension), s.dimension),
+                    weight=next((r.get("weight", 0) for r in rubric if r["dimension"] == s.dimension), 0),
+                    ai_score=s.ai_score,
+                    human_score=s.human_score,
+                    human_comment=s.human_comment,
+                )
+                for s in a.scores
+            ],
+            composite_score=comp,
+        ))
+
+    avg_composite = None
+    if all_composites:
+        avg_composite = (sum(all_composites) / len(all_composites)).quantize(Decimal("0.01"))
+
+    completed_dates = [a.completed_at for a in assignments if a.completed_at]
+    latest_completed = max(completed_dates) if completed_dates else None
+
+    return PostReviewQueueItem(
+        application_id=application.id,
+        reference_number=application.reference_number,
+        programme_name=programme.name,
+        programme_code=programme.code,
+        applicant_name=applicant_name,
+        status=application.status,
+        reviewer_scores=reviewer_scores,
+        composite_score=avg_composite,
+        review_completed_at=latest_completed,
+    )
+
+
 # ── Record post-review decision ──────────────────────────────────────────────
 
 
@@ -587,3 +665,54 @@ async def record_post_review_decision(
 
     await db.flush()
     return application
+
+
+# ── Annotations ─────────────────────────────────────────────────────────────
+
+
+async def create_annotation(
+    db: AsyncSession,
+    application_id: uuid.UUID,
+    reviewer_id: uuid.UUID,
+    text_selection: str,
+    section: str,
+    note: str,
+) -> "ApplicationAnnotation":
+    """Create a text annotation on an application."""
+    from app.features.review.models import ApplicationAnnotation
+
+    # Verify reviewer has an assignment for this application
+    assign_result = await db.execute(
+        select(ReviewAssignment).where(
+            ReviewAssignment.application_id == application_id,
+            ReviewAssignment.reviewer_id == reviewer_id,
+        )
+    )
+    if assign_result.scalar_one_or_none() is None:
+        raise ValueError("No assignment found for this reviewer and application")
+
+    annotation = ApplicationAnnotation(
+        application_id=application_id,
+        reviewer_id=reviewer_id,
+        text_selection=text_selection,
+        section=section,
+        note=note,
+    )
+    db.add(annotation)
+    await db.flush()
+    return annotation
+
+
+async def list_annotations(
+    db: AsyncSession,
+    application_id: uuid.UUID,
+) -> list["ApplicationAnnotation"]:
+    """List all annotations for an application."""
+    from app.features.review.models import ApplicationAnnotation
+
+    result = await db.execute(
+        select(ApplicationAnnotation)
+        .where(ApplicationAnnotation.application_id == application_id)
+        .order_by(ApplicationAnnotation.created_at.desc())
+    )
+    return list(result.scalars().all())

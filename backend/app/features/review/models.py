@@ -89,4 +89,24 @@ class ReviewScore(Base):
         return f"<ReviewScore assignment={self.assignment_id} dim={self.dimension!r}>"
 
 
+class ApplicationAnnotation(Base):
+    """Reviewer text annotation on application content."""
+
+    __tablename__ = "application_annotations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    application_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("applications.id"), nullable=False, index=True
+    )
+    reviewer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    text_selection: Mapped[str] = mapped_column(Text, nullable=False)
+    section: Mapped[str] = mapped_column(String(100), nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 from app.features.applications.models import Application  # noqa: E402, F401

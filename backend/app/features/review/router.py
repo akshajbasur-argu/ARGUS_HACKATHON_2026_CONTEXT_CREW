@@ -13,6 +13,8 @@ from app.core.enums import UserRole
 from app.features.auth.dependencies import require_role
 from app.features.auth.models import User
 from app.features.review.schemas import (
+    AnnotationCreate,
+    AnnotationRead,
     AssignmentQueueItem,
     AssignReviewers,
     PostReviewDecision,
@@ -24,7 +26,10 @@ from app.features.review.schemas import (
 from app.features.review.service import (
     assign_reviewers,
     complete_review,
+    create_annotation,
+    get_post_review_item,
     get_review_workspace,
+    list_annotations,
     list_post_review_queue,
     list_reviewer_queue,
     record_post_review_decision,
@@ -82,6 +87,25 @@ async def list_post_review(
 ) -> list[PostReviewQueueItem]:
     """List applications that have completed review, ready for decisions."""
     return await list_post_review_queue(db, decision_filter=decision_filter)
+
+
+# ── GET /post-review/{application_id} — single app post-review detail ────────
+
+
+@router.get("/post-review/{application_id}", response_model=PostReviewQueueItem)
+async def get_post_review_detail(
+    application_id: uuid.UUID,
+    user: Annotated[User, Depends(require_role(UserRole.program_officer, UserRole.platform_admin))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PostReviewQueueItem:
+    """Get post-review detail for a single application (with per-reviewer scores)."""
+    item = await get_post_review_item(db, application_id)
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found or not in post-review status",
+        )
+    return item
 
 
 # ── POST /decisions/{application_id} — approve/reject/waitlist ────────────────
@@ -182,3 +206,48 @@ async def submit_review(
         "status": "completed",
         "completed_at": assignment.completed_at.isoformat() if assignment.completed_at else None,
     }
+
+
+# ── POST /review/{application_id}/annotations — create annotation ────────────
+
+
+@router.post(
+    "/review/{application_id}/annotations",
+    response_model=AnnotationRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_annotation_endpoint(
+    application_id: uuid.UUID,
+    body: AnnotationCreate,
+    user: Annotated[User, Depends(require_role(UserRole.reviewer))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AnnotationRead:
+    """Create a text annotation on an application."""
+    try:
+        annotation = await create_annotation(
+            db, application_id, user.id,
+            text_selection=body.text_selection,
+            section=body.section,
+            note=body.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    await db.commit()
+    return annotation
+
+
+# ── GET /review/{application_id}/annotations — list annotations ──────────────
+
+
+@router.get(
+    "/review/{application_id}/annotations",
+    response_model=list[AnnotationRead],
+)
+async def list_annotations_endpoint(
+    application_id: uuid.UUID,
+    user: Annotated[User, Depends(require_role(UserRole.reviewer))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[AnnotationRead]:
+    """List all annotations for an application."""
+    return await list_annotations(db, application_id)

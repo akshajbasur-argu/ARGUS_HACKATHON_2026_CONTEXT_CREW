@@ -89,6 +89,15 @@ export function ApplicationDetail() {
   const [timeline, setTimeline] = useState<TimelineEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  const [agreement, setAgreement] = useState<{
+    id: string
+    html_content: string
+    status: string
+    acknowledged_at: string | null
+  } | null>(null)
+  const [ackChecked, setAckChecked] = useState(false)
+  const [acknowledging, setAcknowledging] = useState(false)
+  const [ackSuccess, setAckSuccess] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!id) return
@@ -100,6 +109,16 @@ export function ApplicationDetail() {
       ])
       setApp(appRes.data)
       setTimeline(tlRes.data.events ?? [])
+
+      // Fetch agreement if status indicates one exists
+      if (appRes.data.status === 'agreement_sent' || appRes.data.status === 'agreement_acknowledged') {
+        try {
+          const agreeRes = await apiClient.get(`/v1/awards/grantee/${id}/agreement`)
+          setAgreement(agreeRes.data)
+        } catch {
+          /* agreement may not exist yet */
+        }
+      }
     } catch {
       /* empty — handled by empty state */
     } finally {
@@ -110,6 +129,20 @@ export function ApplicationDetail() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  async function handleAcknowledge() {
+    if (!id || !ackChecked) return
+    setAcknowledging(true)
+    try {
+      await apiClient.post(`/v1/awards/grantee/${id}/acknowledge`)
+      setAckSuccess(true)
+      await fetchData()
+    } catch {
+      /* empty */
+    } finally {
+      setAcknowledging(false)
+    }
+  }
 
   /* ── Loading / not found ─────────────────────────────────────────── */
 
@@ -180,6 +213,55 @@ export function ApplicationDetail() {
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Left column — application details */}
           <div className="space-y-6 lg:col-span-2">
+            {/* Grant Agreement card — shown when agreement has been sent */}
+            {(app.status === 'agreement_sent' || app.status === 'agreement_acknowledged') && (
+              <SectionCard title="Grant Agreement">
+                {ackSuccess || app.status === 'agreement_acknowledged' ? (
+                  <div className="rounded-lg bg-moss/10 border border-moss/30 px-4 py-3">
+                    <p className="font-body text-sm font-medium text-moss">
+                      Agreement acknowledged. Inception tranche has been triggered.
+                    </p>
+                    {agreement?.acknowledged_at && (
+                      <p className="mt-1 font-mono text-xs text-moss/70">
+                        Acknowledged on {formatDateTime(agreement.acknowledged_at)}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {agreement?.html_content && (
+                      <div className="max-h-96 overflow-y-auto rounded-lg border border-sand bg-white p-4">
+                        <div
+                          dangerouslySetInnerHTML={{ __html: agreement.html_content }}
+                          className="font-body text-sm text-soil"
+                        />
+                      </div>
+                    )}
+
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={ackChecked}
+                        onChange={(e) => setAckChecked(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-sand text-moss focus:ring-moss/30"
+                      />
+                      <span className="font-body text-sm text-bark">
+                        I have read and accept this agreement
+                      </span>
+                    </label>
+
+                    <button
+                      onClick={handleAcknowledge}
+                      disabled={!ackChecked || acknowledging}
+                      className="rounded-lg bg-moss px-5 py-2.5 font-heading text-sm font-semibold text-cream transition-colors hover:bg-moss/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {acknowledging ? 'Acknowledging...' : 'Acknowledge Agreement'}
+                    </button>
+                  </div>
+                )}
+              </SectionCard>
+            )}
+
             {/* Meta */}
             <SectionCard title="Application Info">
               <dl className="grid gap-4 sm:grid-cols-2">

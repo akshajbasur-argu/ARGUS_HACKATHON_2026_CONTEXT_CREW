@@ -15,11 +15,11 @@ from app.features.auth.models import User, Organisation  # noqa: F401
 from app.features.programmes.models import GrantProgramme  # noqa: F401
 from app.features.applications.models import Application, Document  # noqa: F401
 from app.features.screening.models import ScreeningReport  # noqa: F401
-from app.features.review.models import ReviewAssignment, ReviewPackage, ReviewScore  # noqa: F401
+from app.features.review.models import ApplicationAnnotation, ReviewAssignment, ReviewPackage, ReviewScore  # noqa: F401
 from app.features.finance.models import Disbursement  # noqa: F401
 from app.features.compliance.models import Report, ComplianceAnalysis  # noqa: F401
 from app.features.messaging.models import Message  # noqa: F401
-from app.features.admin.models import AuditLog  # noqa: F401
+from app.features.admin.models import AuditLog, LetterTemplate  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

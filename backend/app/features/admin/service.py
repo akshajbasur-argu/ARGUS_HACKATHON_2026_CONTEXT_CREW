@@ -158,3 +158,115 @@ async def list_audit_logs(
     ]
 
     return items, total
+
+
+# ── Template management ──────────────────────────────────────────────────────
+
+
+async def seed_default_templates(db: AsyncSession) -> None:
+    """Seed default letter templates if they don't exist."""
+    from app.features.admin.models import LetterTemplate
+
+    result = await db.execute(select(LetterTemplate))
+    existing = {t.code for t in result.scalars().all()}
+
+    defaults = [
+        {
+            "code": "award",
+            "name": "Award Letter",
+            "required_fields": [
+                "award_date", "grant_reference", "contact_person",
+                "programme_name", "grantee_organisation_name", "project_title",
+                "award_amount", "start_date", "end_date",
+                "special_conditions", "decision_reasons",
+            ],
+        },
+        {
+            "code": "rejection",
+            "name": "Rejection Letter",
+            "required_fields": [
+                "decision_date", "grant_reference", "contact_person",
+                "programme_name", "project_title", "rejection_reasons",
+            ],
+        },
+        {
+            "code": "agreement",
+            "name": "Grant Agreement",
+            "required_fields": [
+                "grantee_organisation_name", "registration_number", "state",
+                "grant_reference", "programme_name", "programme_code",
+                "project_title", "award_amount", "start_date", "end_date",
+                "award_date", "tranche_table", "special_conditions",
+            ],
+        },
+    ]
+
+    from app.features.awards.service import (
+        AWARD_LETTER_TEMPLATE,
+        REJECTION_LETTER_TEMPLATE,
+        AGREEMENT_TEMPLATE,
+    )
+
+    template_bodies = {
+        "award": AWARD_LETTER_TEMPLATE,
+        "rejection": REJECTION_LETTER_TEMPLATE,
+        "agreement": AGREEMENT_TEMPLATE,
+    }
+
+    for d in defaults:
+        if d["code"] not in existing:
+            t = LetterTemplate(
+                code=d["code"],
+                name=d["name"],
+                body_text=template_bodies[d["code"]],
+                required_fields=d["required_fields"],
+            )
+            db.add(t)
+
+    await db.flush()
+
+
+async def list_templates(db: AsyncSession) -> list:
+    """List all letter templates."""
+    from app.features.admin.models import LetterTemplate
+
+    result = await db.execute(
+        select(LetterTemplate).order_by(LetterTemplate.code)
+    )
+    return list(result.scalars().all())
+
+
+async def get_template(db: AsyncSession, code: str):
+    """Get a single template by code."""
+    from app.features.admin.models import LetterTemplate
+
+    result = await db.execute(
+        select(LetterTemplate).where(LetterTemplate.code == code)
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_template(db: AsyncSession, code: str, body_text: str) -> tuple[bool, list[str]]:
+    """Update template body_text. Returns (success, missing_fields)."""
+    import re
+    from app.features.admin.models import LetterTemplate
+
+    result = await db.execute(
+        select(LetterTemplate).where(LetterTemplate.code == code)
+    )
+    template = result.scalar_one_or_none()
+    if template is None:
+        raise ValueError(f"Template '{code}' not found")
+
+    # Validate required merge fields are present
+    present_fields = set(re.findall(r"\{\{(.+?)\}\}", body_text))
+    present_fields = {f.strip() for f in present_fields}
+    required = set(template.required_fields or [])
+    missing = required - present_fields
+
+    if missing:
+        return False, sorted(missing)
+
+    template.body_text = body_text
+    await db.flush()
+    return True, []

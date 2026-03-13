@@ -158,68 +158,153 @@ export function DecisionQueue() {
 
               {/* Reviewer scores comparison */}
               <div className="px-5 py-3">
-                {item.reviewer_scores.length > 1 && (
-                  <p className="mb-2 font-body text-xs font-medium text-sand">
-                    Reviewer Comparison ({item.programme_code} — {item.reviewer_scores.length} reviewers)
-                  </p>
-                )}
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left font-body text-xs">
-                    <thead>
-                      <tr className="border-b border-straw text-sand">
-                        <th className="pb-1.5 pr-3 font-medium">Dimension</th>
-                        {item.reviewer_scores.map((rs) => (
-                          <th key={rs.reviewer_id} className="pb-1.5 pr-3 font-medium">
-                            {rs.reviewer_name}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        const dims = new Set<string>()
-                        for (const rs of item.reviewer_scores) {
-                          for (const s of rs.scores) dims.add(s.dimension)
-                        }
-                        return Array.from(dims).map((dim) => (
-                          <tr key={dim} className="border-b border-straw/40">
-                            <td className="py-1.5 pr-3 capitalize text-bark">
-                              {dim.replace(/_/g, ' ')}
-                            </td>
-                            {item.reviewer_scores.map((rs) => {
-                              const score = rs.scores.find((s) => s.dimension === dim)
-                              return (
-                                <td
-                                  key={rs.reviewer_id}
-                                  className="py-1.5 pr-3 font-mono text-soil"
-                                >
-                                  {score?.human_score != null ? Number(score.human_score) : '—'}
-                                  {score?.ai_score != null && (
-                                    <span className="ml-1 text-sand">
-                                      (AI: {Number(score.ai_score)})
-                                    </span>
-                                  )}
-                                </td>
-                              )
-                            })}
+                {/* EIG side-by-side comparison */}
+                {item.programme_code === 'EIG' && item.reviewer_scores.length >= 2 && item.reviewer_scores.every(rs => rs.completed_at) ? (
+                  <div>
+                    <p className="mb-2 font-heading text-xs font-semibold text-bark">
+                      EIG Reviewer Comparison
+                    </p>
+                    <div className="overflow-x-auto rounded-lg border border-sand">
+                      <table className="w-full text-left font-body text-xs">
+                        <thead>
+                          <tr className="bg-soil/5 text-sand">
+                            <th className="px-3 py-2 font-medium">Dimension</th>
+                            <th className="px-3 py-2 font-medium text-center">{item.reviewer_scores[0].reviewer_name}</th>
+                            <th className="px-3 py-2 font-medium text-center">{item.reviewer_scores[1].reviewer_name}</th>
+                            <th className="px-3 py-2 font-medium text-center">Diff</th>
                           </tr>
-                        ))
-                      })()}
-                      {/* Composite row */}
-                      <tr className="font-semibold">
-                        <td className="pt-2 text-bark">Composite</td>
-                        {item.reviewer_scores.map((rs) => (
-                          <td key={rs.reviewer_id} className="pt-2 font-mono text-soil">
-                            {rs.composite_score != null
-                              ? Number(rs.composite_score).toFixed(2)
-                              : '—'}
-                          </td>
-                        ))}
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                        </thead>
+                        <tbody>
+                          {(() => {
+                            const dims = new Set<string>()
+                            for (const rs of item.reviewer_scores) {
+                              for (const s of rs.scores) dims.add(s.dimension)
+                            }
+                            return Array.from(dims).map((dim) => {
+                              const s1 = item.reviewer_scores[0].scores.find(s => s.dimension === dim)
+                              const s2 = item.reviewer_scores[1].scores.find(s => s.dimension === dim)
+                              const v1 = s1?.human_score != null ? Number(s1.human_score) : null
+                              const v2 = s2?.human_score != null ? Number(s2.human_score) : null
+                              const diff = v1 != null && v2 != null ? Math.abs(v1 - v2) : null
+                              const isHighDiff = diff != null && diff >= 2
+
+                              return (
+                                <tr
+                                  key={dim}
+                                  className={cn(
+                                    'border-b border-straw/40',
+                                    isHighDiff && 'bg-amber/10',
+                                  )}
+                                >
+                                  <td className="px-3 py-2 capitalize text-bark">
+                                    {dim.replace(/_/g, ' ')}
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-mono text-soil">
+                                    {v1 ?? '—'}
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-mono text-soil">
+                                    {v2 ?? '—'}
+                                  </td>
+                                  <td className={cn(
+                                    'px-3 py-2 text-center font-mono font-semibold',
+                                    isHighDiff ? 'text-amber' : 'text-sand',
+                                  )}>
+                                    {diff != null ? diff : '—'}
+                                  </td>
+                                </tr>
+                              )
+                            })
+                          })()}
+                          {/* Composite row */}
+                          <tr className="bg-soil/5 font-semibold">
+                            <td className="px-3 py-2 text-bark">Composite</td>
+                            <td className="px-3 py-2 text-center font-mono text-soil">
+                              {item.reviewer_scores[0].composite_score != null
+                                ? Number(item.reviewer_scores[0].composite_score).toFixed(2)
+                                : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-center font-mono text-soil">
+                              {item.reviewer_scores[1].composite_score != null
+                                ? Number(item.reviewer_scores[1].composite_score).toFixed(2)
+                                : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-center font-mono text-soil">
+                              {item.composite_score != null
+                                ? `Avg: ${Number(item.composite_score).toFixed(2)}`
+                                : '—'}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  /* Standard reviewer display for non-EIG or single reviewer */
+                  <div>
+                    {item.reviewer_scores.length > 1 && (
+                      <p className="mb-2 font-body text-xs font-medium text-sand">
+                        Reviewer Comparison ({item.programme_code} — {item.reviewer_scores.length} reviewers)
+                      </p>
+                    )}
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left font-body text-xs">
+                        <thead>
+                          <tr className="border-b border-straw text-sand">
+                            <th className="pb-1.5 pr-3 font-medium">Dimension</th>
+                            {item.reviewer_scores.map((rs) => (
+                              <th key={rs.reviewer_id} className="pb-1.5 pr-3 font-medium">
+                                {rs.reviewer_name}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(() => {
+                            const dims = new Set<string>()
+                            for (const rs of item.reviewer_scores) {
+                              for (const s of rs.scores) dims.add(s.dimension)
+                            }
+                            return Array.from(dims).map((dim) => (
+                              <tr key={dim} className="border-b border-straw/40">
+                                <td className="py-1.5 pr-3 capitalize text-bark">
+                                  {dim.replace(/_/g, ' ')}
+                                </td>
+                                {item.reviewer_scores.map((rs) => {
+                                  const score = rs.scores.find((s) => s.dimension === dim)
+                                  return (
+                                    <td
+                                      key={rs.reviewer_id}
+                                      className="py-1.5 pr-3 font-mono text-soil"
+                                    >
+                                      {score?.human_score != null ? Number(score.human_score) : '—'}
+                                      {score?.ai_score != null && (
+                                        <span className="ml-1 text-sand">
+                                          (AI: {Number(score.ai_score)})
+                                        </span>
+                                      )}
+                                    </td>
+                                  )
+                                })}
+                              </tr>
+                            ))
+                          })()}
+                          {/* Composite row */}
+                          <tr className="font-semibold">
+                            <td className="pt-2 text-bark">Composite</td>
+                            {item.reviewer_scores.map((rs) => (
+                              <td key={rs.reviewer_id} className="pt-2 font-mono text-soil">
+                                {rs.composite_score != null
+                                  ? Number(rs.composite_score).toFixed(2)
+                                  : '—'}
+                              </td>
+                            ))}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
                 {/* Decision button — only for pending */}
                 {item.status === 'review_complete' && (

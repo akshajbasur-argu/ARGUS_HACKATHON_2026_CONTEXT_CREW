@@ -204,6 +204,23 @@ async def send_agreement_endpoint(
     return agreement
 
 
+# ── GET /grantee/{app_id}/agreement — get agreement for applicant ────────────
+
+
+@router.get("/grantee/{app_id}/agreement", response_model=AgreementRead)
+async def get_agreement_for_grantee(
+    app_id: uuid.UUID,
+    applicant: Annotated[User, Depends(require_applicant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get the agreement for an application (grantee view)."""
+    from app.features.awards.service import get_award_with_agreement
+    award = await get_award_with_agreement(db, app_id)
+    if award is None or award.agreement is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No agreement found")
+    return award.agreement
+
+
 # ── POST /grantee/{app_id}/acknowledge ───────────────────────────────────────
 
 
@@ -233,6 +250,44 @@ async def acknowledge_agreement_endpoint(
 
         task_send_notification.delay(
             str(app_id), "agreement_acknowledged", {"agreement_id": str(agreement.id)}
+        )
+        # Also notify about tranche readiness
+        task_send_notification.delay(
+            str(app_id), "tranche_ready", {"agreement_id": str(agreement.id)}
+        )
+    except Exception:
+        pass
+
+    return agreement
+
+
+# Alias route for /grantee/agreements/{app_id}/acknowledge
+@router.post("/grantee/agreements/{app_id}/acknowledge", response_model=AgreementRead)
+async def acknowledge_agreement_alias(
+    app_id: uuid.UUID,
+    applicant: Annotated[User, Depends(require_applicant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Alias: Grantee acknowledges the agreement."""
+    try:
+        agreement = await acknowledge_agreement(db, app_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    await write_audit_log(
+        db,
+        actor_id=applicant.id,
+        action="agreement_acknowledged",
+        object_type="agreement",
+        object_id=str(agreement.id),
+    )
+    await db.commit()
+
+    # Notify finance officers about tranche readiness
+    try:
+        from worker.tasks.notification_tasks import task_send_notification
+        task_send_notification.delay(
+            str(app_id), "tranche_ready", {"agreement_id": str(agreement.id)}
         )
     except Exception:
         pass
