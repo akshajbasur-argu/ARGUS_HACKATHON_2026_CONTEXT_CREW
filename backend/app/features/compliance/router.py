@@ -16,11 +16,13 @@ from app.features.compliance.schemas import (
     ComplianceDecisionRequest,
     MessageResponse,
     ReportRead,
+    ReportScheduleResponse,
     ReportSubmitRequest,
     ReportWithAnalysisRead,
 )
 from app.features.compliance.service import (
     decide_report,
+    get_report_schedule,
     get_report_with_analysis,
     list_grantee_reports,
     list_pending_reports,
@@ -99,6 +101,23 @@ async def submit_report_endpoint(
     return report
 
 
+# ── GET /grantee/reports/schedule/{app_id} — report schedule ─────────────────
+
+
+@router.get("/grantee/reports/schedule/{app_id}", response_model=ReportScheduleResponse)
+async def report_schedule(
+    app_id: uuid.UUID,
+    applicant: Annotated[User, Depends(require_applicant)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get the report schedule for an application."""
+    try:
+        schedule = await get_report_schedule(db, app_id=app_id, applicant_id=applicant.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return schedule
+
+
 # ── GET /staff/reports — reports pending review ──────────────────────────────
 
 
@@ -157,18 +176,65 @@ async def decide_report_endpoint(
         object_id=str(report_id),
         metadata={"action": body.action.value, "severity": body.severity.value if body.severity else None},
     )
+
+    # Notify grantee (persisted to DB)
+    from app.features.messaging.service import send_notification
+    from sqlalchemy import select
+    from app.features.applications.models import Application
+
+    app_result = await db.execute(
+        select(Application).where(Application.id == report.application_id)
+    )
+    application = app_result.scalar_one_or_none()
+
+    if application:
+        action_val = body.action.value
+        if action_val == "approved":
+            await send_notification(
+                db,
+                user_id=application.applicant_id,
+                event_type="report_approved",
+                body=f"Your compliance report for application {application.reference_number} has been approved.",
+                payload={"application_id": str(report.application_id), "report_id": str(report_id)},
+            )
+        elif action_val == "clarification":
+            await send_notification(
+                db,
+                user_id=application.applicant_id,
+                event_type="compliance_clarification",
+                body=f"Clarification needed on your report for application {application.reference_number}: {body.notes}",
+                payload={"application_id": str(report.application_id), "report_id": str(report_id), "notes": body.notes},
+            )
+        elif action_val == "compliance_action":
+            await send_notification(
+                db,
+                user_id=application.applicant_id,
+                event_type="compliance_compliance_action",
+                body=f"Compliance action taken on your report for application {application.reference_number}.",
+                payload={"application_id": str(report.application_id), "report_id": str(report_id), "notes": body.notes},
+            )
+
+            # If severity is disbursement_hold, also notify finance officers
+            if body.severity and body.severity.value == "disbursement_hold":
+                from app.features.auth.models import User as _CFUser
+                from app.core.enums import UserRole as _CFUR
+
+                fo_result = await db.execute(
+                    select(_CFUser).where(_CFUser.role == _CFUR.finance_officer, _CFUser.is_active.is_(True))
+                )
+                for fo in fo_result.scalars().all():
+                    await send_notification(
+                        db,
+                        user_id=fo.id,
+                        event_type="disbursement_hold",
+                        body=f"Disbursement hold applied to application {application.reference_number} due to compliance action.",
+                        payload={
+                            "application_id": str(report.application_id),
+                            "report_id": str(report_id),
+                            "severity": "disbursement_hold",
+                        },
+                    )
+
     await db.commit()
-
-    # Notify grantee
-    try:
-        from worker.tasks.notification_tasks import task_send_notification
-
-        task_send_notification.delay(
-            str(report.application_id),
-            f"compliance_{body.action.value}",
-            {"report_id": str(report_id), "notes": body.notes},
-        )
-    except Exception:
-        pass
 
     return report

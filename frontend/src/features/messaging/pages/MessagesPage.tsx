@@ -30,8 +30,9 @@ function formatMsgTime(value: string): string {
   return `${day} ${month} ${year} ${hours}:${mins}`
 }
 
-export function MessagesPage() {
-  const { appId } = useParams<{ appId: string }>()
+export function MessagesPage({ appId: appIdProp }: { appId?: string } = {}) {
+  const params = useParams<{ appId: string }>()
+  const appId = appIdProp ?? params.appId
   const user = useAuthStore((s) => s.user)
   const isApplicant = user?.role === 'applicant'
   const isStaff = !isApplicant

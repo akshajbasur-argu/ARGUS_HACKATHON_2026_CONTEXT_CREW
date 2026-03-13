@@ -24,10 +24,17 @@ interface ScoreDim {
   human_comment: string | null
 }
 
+interface AIScoreDetail {
+  score: number
+  justification: string
+  source_section: string
+}
+
 interface ReviewPkg {
   id: string
   summary_text: string
   suggested_scores: Record<string, number>
+  score_details: Record<string, AIScoreDetail> | null
   risk_flags: RiskFlag[]
   generated_at: string
 }
@@ -450,8 +457,25 @@ export function ReviewWorkspace() {
                       <svg className="h-4 w-4 text-clay" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
                       </svg>
-                      <span className="text-bark">{doc.filename}</span>
+                      <a
+                        href={`/api/v1/documents/${doc.id}/download`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-clay hover:underline"
+                      >
+                        {doc.filename}
+                      </a>
                       <span className="font-mono text-[10px] text-sand">{doc.doc_type}</span>
+                      <a
+                        href={`/api/v1/documents/${doc.id}/download`}
+                        download
+                        className="ml-auto flex items-center gap-1 rounded-md bg-clay/10 px-2 py-0.5 font-mono text-[10px] text-clay hover:bg-clay/20"
+                      >
+                        <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                        Download
+                      </a>
                     </li>
                   ))}
                 </ul>
@@ -482,6 +506,7 @@ export function ReviewWorkspace() {
               {data.rubric.map((dim) => {
                 const entry = scores[dim.dimension] ?? { score: null, comment: '' }
                 const aiScore = data.package?.suggested_scores?.[dim.dimension] ?? null
+                const aiDetail = data.package?.score_details?.[dim.dimension] ?? null
 
                 return (
                   <div
@@ -504,6 +529,20 @@ export function ReviewWorkspace() {
                     <div className="mb-2">
                       <AIStars score={aiScore} />
                     </div>
+
+                    {/* AI justification & source section */}
+                    {aiDetail && (
+                      <div className="mb-2 rounded-md border border-amber/20 bg-amber/5 px-2.5 py-2">
+                        <p className="font-body text-xs text-bark leading-relaxed">
+                          {aiDetail.justification}
+                        </p>
+                        {aiDetail.source_section && (
+                          <p className="mt-1 font-mono text-[10px] text-sand">
+                            Source: {aiDetail.source_section}
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Human score */}
                     <div className="mb-2">

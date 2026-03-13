@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { SectionCard } from '@/shared/components/SectionCard'
 import { StatusPill } from '@/shared/components/StatusPill'
 import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
+import { Modal } from '@/shared/components/Modal'
 import { cn } from '@/shared/utils/cn'
 import { formatINR, formatINRCompact } from '@/shared/utils/formatCurrency'
 import { apiClient } from '@/api/client'
@@ -49,6 +50,34 @@ interface ProgrammeDashboardData {
   per_programme: ProgrammeSummary[]
 }
 
+// ── Grant detail types ──────────────────────────────────────────────────────
+
+interface BudgetLineItem {
+  category: string
+  budgeted: number
+  actual: number
+}
+
+interface BurnPoint {
+  month: string
+  budgeted_cumulative: number
+  actual_cumulative: number
+}
+
+interface DisbursementRecord {
+  tranche_label: string
+  amount_inr: string
+  released_at: string | null
+  status: string
+}
+
+interface GrantDetail {
+  reference_number: string
+  budget_lines: BudgetLineItem[]
+  burn_data: BurnPoint[]
+  disbursements: DisbursementRecord[]
+}
+
 // ── Tabs ───────────────────────────────────────────────────────────────────
 
 type TabKey = 'grants' | 'programme'
@@ -73,6 +102,10 @@ export function FundDashboard() {
   const [filterProgramme, setFilterProgramme] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
 
+  // Grant detail modal
+  const [grantDetail, setGrantDetail] = useState<GrantDetail | null>(null)
+  const [grantDetailLoading, setGrantDetailLoading] = useState(false)
+
   const fetchDashboard = useCallback(async () => {
     setLoading(true)
     try {
@@ -92,6 +125,19 @@ export function FundDashboard() {
   useEffect(() => {
     fetchDashboard()
   }, [fetchDashboard])
+
+  const openGrantDetail = useCallback(async (appId: string) => {
+    setGrantDetailLoading(true)
+    setGrantDetail(null)
+    try {
+      const res = await apiClient.get(`/v1/finance/dashboard/grant/${appId}`)
+      setGrantDetail(res.data)
+    } catch {
+      setError('Failed to load grant detail.')
+    } finally {
+      setGrantDetailLoading(false)
+    }
+  }, [])
 
   // Close export dropdown on click outside
   useEffect(() => {
@@ -319,8 +365,8 @@ export function FundDashboard() {
                     </tr>
                   ) : (
                     filteredGrants.map((g) => (
-                      <tr key={g.application_id} className="border-b border-straw/50 transition-colors hover:bg-parchment/50">
-                        <td className="px-4 py-3 font-mono text-sm text-soil">{g.reference_number}</td>
+                      <tr key={g.application_id} className="border-b border-straw/50 transition-colors hover:bg-parchment/50 cursor-pointer" onClick={() => openGrantDetail(g.application_id)}>
+                        <td className="px-4 py-3 font-mono text-sm text-clay hover:underline">{g.reference_number}</td>
                         <td className="px-4 py-3 text-bark">{g.programme_name}</td>
                         <td className="px-4 py-3"><StatusPill status={g.status} /></td>
                         <td className="px-4 py-3 text-right font-mono">{formatINR(parseFloat(g.budget))}</td>
@@ -429,6 +475,113 @@ export function FundDashboard() {
           </div>
         </>
       )}
+
+      {/* ── Grant Detail Modal ──────────────────────────────────────── */}
+      <Modal
+        open={grantDetail != null || grantDetailLoading}
+        onClose={() => setGrantDetail(null)}
+        title={grantDetail ? `Grant Detail — ${grantDetail.reference_number}` : 'Loading...'}
+        width="lg"
+      >
+        {grantDetailLoading ? (
+          <div className="flex h-40 items-center justify-center">
+            <LoadingSpinner label="Loading grant detail..." />
+          </div>
+        ) : grantDetail ? (
+          <div className="space-y-6 p-5">
+            {/* Budget vs Actuals Bar Chart */}
+            <div>
+              <h4 className="mb-3 font-heading text-sm font-semibold text-bark">
+                Budget vs Actuals by Category
+              </h4>
+              {grantDetail.budget_lines.length > 0 ? (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={grantDetail.budget_lines.map((bl) => ({
+                        name: bl.category.charAt(0).toUpperCase() + bl.category.slice(1),
+                        Budgeted: bl.budgeted,
+                        Actual: bl.actual,
+                      }))}
+                      margin={{ top: 10, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tickFormatter={(v: number) => formatINRCompact(v)} tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v) => formatINR(Number(v))} />
+                      <Legend />
+                      <Bar dataKey="Budgeted" fill="#8B5E3C" radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="Actual" fill="#4A6741" radius={[2, 2, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-sm text-sand font-body">No budget line data available.</p>
+              )}
+            </div>
+
+            {/* Running Burn Chart */}
+            <div>
+              <h4 className="mb-3 font-heading text-sm font-semibold text-bark">
+                Burn Chart (Cumulative)
+              </h4>
+              {grantDetail.burn_data.length > 0 ? (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={grantDetail.burn_data}
+                      margin={{ top: 10, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <YAxis tickFormatter={(v: number) => formatINRCompact(v)} tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v) => formatINR(Number(v))} />
+                      <Legend />
+                      <Line type="monotone" dataKey="budgeted_cumulative" name="Budget Plan" stroke="#8B5E3C" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="actual_cumulative" name="Actual Spend" stroke="#4A6741" strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-sm text-sand font-body">No burn data available yet.</p>
+              )}
+            </div>
+
+            {/* Disbursement History Table */}
+            <div>
+              <h4 className="mb-3 font-heading text-sm font-semibold text-bark">
+                Disbursement History
+              </h4>
+              {grantDetail.disbursements.length > 0 ? (
+                <div className="overflow-x-auto rounded-lg border border-sand">
+                  <table className="w-full text-left text-sm font-body">
+                    <thead>
+                      <tr className="border-b-2 border-sand bg-parchment">
+                        <th className="px-4 py-2 font-heading text-xs font-semibold uppercase tracking-wider text-bark">Tranche</th>
+                        <th className="px-4 py-2 text-right font-heading text-xs font-semibold uppercase tracking-wider text-bark">Amount</th>
+                        <th className="px-4 py-2 font-heading text-xs font-semibold uppercase tracking-wider text-bark">Date</th>
+                        <th className="px-4 py-2 font-heading text-xs font-semibold uppercase tracking-wider text-bark">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grantDetail.disbursements.map((d, i) => (
+                        <tr key={i} className="border-b border-straw/50">
+                          <td className="px-4 py-2 text-bark">{d.tranche_label}</td>
+                          <td className="px-4 py-2 text-right font-mono text-soil">{formatINR(parseFloat(d.amount_inr))}</td>
+                          <td className="px-4 py-2 font-mono text-xs text-bark">{d.released_at ? new Date(d.released_at).toLocaleDateString('en-IN') : '—'}</td>
+                          <td className="px-4 py-2"><StatusPill status={d.status} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-sand font-body">No disbursements recorded yet.</p>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

@@ -15,6 +15,7 @@ interface AppRow {
   programme_name: string
   programme_id: string
   status: string
+  current_stage: string | null
   submitted_at: string
   updated_at: string
   [key: string]: unknown
@@ -101,6 +102,16 @@ export function ApplicationDashboard() {
       header: 'Status',
       sortable: true,
       render: (row) => <StatusPill status={row.status} />,
+    },
+    {
+      key: 'current_stage',
+      header: 'Current Stage',
+      sortable: true,
+      render: (row) => (
+        <span className="inline-flex items-center rounded-md bg-clay/10 px-2 py-0.5 font-mono text-xs font-medium text-clay">
+          {row.current_stage ? row.current_stage.replace(/_/g, ' ') : '—'}
+        </span>
+      ),
     },
     {
       key: 'submitted_at',

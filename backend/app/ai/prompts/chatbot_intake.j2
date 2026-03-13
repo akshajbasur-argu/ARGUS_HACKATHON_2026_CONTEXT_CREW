@@ -26,16 +26,20 @@ IMPORTANT RULES:
 3. When confirming a captured value, briefly summarise what you understood
 4. After confirming, indicate you are ready to move to the next field
 5. When ALL fields are captured, congratulate the applicant and indicate the application is ready
+6. Do NOT suggest or write content for the applicant — only ask questions and confirm answers
 
 You MUST respond with ONLY valid JSON matching this schema. No markdown, no preamble:
 
 {
   "assistant_message": "<string — your conversational response to the applicant>",
-  "field_captured": <null or {"field_name": "<string>", "value": "<string or object>"}>,
-  "next_field": "<string — name of the next field to collect, or null if complete>",
+  "next_field_key": "<string — key of the next field to collect, or null if complete>",
   "progress_pct": <integer 0-100>,
-  "complete": <boolean — true only when ALL fields have been captured and confirmed>
+  "complete": <boolean — true only when ALL fields have been captured and confirmed>,
+  "captured_fields": {{ captured_fields_json }}
 }
+
+When a field is captured in this turn, add it to the captured_fields object with its key and value.
+If no field was captured this turn, return captured_fields unchanged.
 ---USER---
 Conversation so far:
 {% for msg in conversation_history %}

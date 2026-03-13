@@ -17,6 +17,8 @@ from app.features.auth.dependencies import require_applicant, require_finance_of
 from app.features.auth.models import User
 from app.features.auth.service import write_audit_log
 from app.features.finance.schemas import (
+    BankDetailsRead,
+    BankDetailsRequest,
     DashboardResponse,
     DisbursementRead,
     ExpenditureCreateRequest,
@@ -27,11 +29,13 @@ from app.features.finance.schemas import (
 )
 from app.features.finance.service import (
     create_expenditure,
+    get_bank_details,
     get_dashboard_data,
     get_programme_dashboard_data,
     list_all_disbursements,
     list_expenditures,
     release_tranche,
+    update_bank_details,
     verify_expenditure,
 )
 
@@ -84,23 +88,84 @@ async def release_tranche_endpoint(
             "payment_reference": body.payment_reference,
         },
     )
-    await db.commit()
+    # Notify applicant of tranche release
+    from app.features.messaging.service import send_notification
+    from sqlalchemy import select
+    from app.features.applications.models import Application
 
-    try:
-        from worker.tasks.notification_tasks import task_send_notification
-
-        task_send_notification.delay(
-            str(disbursement.application_id),
-            "tranche_released",
-            {
+    app_result = await db.execute(
+        select(Application).where(Application.id == disbursement.application_id)
+    )
+    application = app_result.scalar_one_or_none()
+    if application:
+        await send_notification(
+            db,
+            user_id=application.applicant_id,
+            event_type="tranche_released",
+            body=f"Tranche '{disbursement.tranche_label}' of INR {disbursement.amount_inr:,.2f} has been released for your application {application.reference_number}.",
+            payload={
+                "application_id": str(disbursement.application_id),
                 "tranche": disbursement.tranche_label,
                 "amount": str(disbursement.amount_inr),
             },
         )
-    except Exception:
-        pass
+
+    await db.commit()
 
     return disbursement
+
+
+# ── GET /bank-details/{app_id} — get bank details for an application ────────
+
+
+@router.get("/bank-details/{app_id}", response_model=BankDetailsRead)
+async def get_bank_details_endpoint(
+    app_id: uuid.UUID,
+    officer: Annotated[User, Depends(require_finance_officer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get bank details for an application's disbursements."""
+    details = await get_bank_details(db, app_id)
+    if details is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No bank details found for this application",
+        )
+    return details
+
+
+# ── PUT /bank-details/{app_id} — update bank details for an application ─────
+
+
+@router.put("/bank-details/{app_id}", response_model=BankDetailsRead)
+async def update_bank_details_endpoint(
+    app_id: uuid.UUID,
+    body: BankDetailsRequest,
+    officer: Annotated[User, Depends(require_finance_officer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update bank details for all disbursements of an application."""
+    try:
+        details = await update_bank_details(
+            db,
+            app_id=app_id,
+            bank_account=body.bank_account,
+            ifsc=body.ifsc,
+            beneficiary_name=body.beneficiary_name,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    await write_audit_log(
+        db,
+        actor_id=officer.id,
+        action="bank_details_updated",
+        object_type="application",
+        object_id=str(app_id),
+        metadata={"beneficiary_name": body.beneficiary_name},
+    )
+    await db.commit()
+    return details
 
 
 # ── POST /grantee/expenditure — submit expenditure record ────────────────────

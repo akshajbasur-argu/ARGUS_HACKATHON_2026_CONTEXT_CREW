@@ -21,6 +21,12 @@ class OrgType(str, enum.Enum):
     company = "company"
     government = "government"
     individual = "individual"
+    section_8_company = "section_8_company"
+    edtech_nonprofit = "edtech_nonprofit"
+    research_institution = "research_institution"
+    university = "university"
+    fpo = "fpo"
+    panchayat = "panchayat"
 
 
 class ApplicationStatus(str, enum.Enum):

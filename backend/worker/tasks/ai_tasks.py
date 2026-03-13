@@ -106,10 +106,80 @@ def task_analyse_report(self, report_id: str) -> dict:  # type: ignore[override]
 
 @celery_app.task(name="worker.tasks.ai_tasks.task_sla_check")
 def task_sla_check() -> dict:
-    """Periodic: check applications approaching SLA deadlines.
+    """Periodic: check reviewer assignments approaching SLA deadlines.
 
-    TODO: Query applications stuck in screening/review beyond threshold,
-    escalate to programme officers.
+    Sends a reminder 3 days before the review SLA expires.
     """
     logger.info("SLA check running")
-    return {"status": "ok", "checked": 0}
+    result = _run_async(_sla_check_async())
+    return result
+
+
+async def _sla_check_async() -> dict:
+    """Check for reviewer assignments approaching SLA deadline."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.core.database import AsyncSessionLocal
+    from app.core.enums import ApplicationStatus
+    from app.features.applications.models import Application
+    from app.features.programmes.models import GrantProgramme
+    from app.features.review.models import ReviewAssignment
+
+    # Programme-specific SLA days for the under_review stage
+    SLA_DAYS = {
+        "CDG": 7,
+        "EIG": 10,
+        "ECAG": 7,
+    }
+    DEFAULT_SLA_DAYS = 7
+    REMINDER_DAYS_BEFORE = 3  # Send reminder 3 days before SLA expiry
+
+    now = datetime.now(timezone.utc)
+    checked = 0
+    reminders_sent = 0
+
+    async with AsyncSessionLocal() as db:
+        # Find incomplete review assignments
+        result = await db.execute(
+            select(ReviewAssignment, Application, GrantProgramme.code)
+            .join(Application, Application.id == ReviewAssignment.application_id)
+            .join(GrantProgramme, GrantProgramme.id == Application.programme_id)
+            .where(
+                ReviewAssignment.completed_at.is_(None),
+                Application.status == ApplicationStatus.under_review,
+            )
+        )
+        rows = result.all()
+
+        for assignment, application, programme_code in rows:
+            checked += 1
+            sla_days = SLA_DAYS.get(programme_code, DEFAULT_SLA_DAYS)
+            sla_deadline = assignment.assigned_at + timedelta(days=sla_days)
+            days_until_expiry = (sla_deadline - now).days
+
+            # Send reminder if exactly 3 days before expiry (±1 day tolerance)
+            if abs(days_until_expiry - REMINDER_DAYS_BEFORE) <= 1:
+                from worker.tasks.notification_tasks import task_send_notification
+
+                task_send_notification.delay(
+                    user_id=str(assignment.reviewer_id),
+                    event_type="reviewer_sla_reminder",
+                    payload={
+                        "application_id": str(application.id),
+                        "reference_number": application.reference_number,
+                        "days_remaining": days_until_expiry,
+                        "sla_deadline": sla_deadline.isoformat(),
+                        "message": (
+                            f"Review for {application.reference_number} is due in "
+                            f"{days_until_expiry} day(s). Please complete your review."
+                        ),
+                    },
+                )
+                reminders_sent += 1
+
+        await db.commit()
+
+    logger.info("SLA check complete: checked=%d, reminders=%d", checked, reminders_sent)
+    return {"status": "ok", "checked": checked, "reminders_sent": reminders_sent}

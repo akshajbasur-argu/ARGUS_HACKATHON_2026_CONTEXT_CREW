@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -61,6 +61,18 @@ class ComplianceAnalysisRead(BaseModel):
 
 class ReportWithAnalysisRead(ReportRead):
     compliance_analysis: ComplianceAnalysisRead | None = None
+
+
+class ReportScheduleEntry(BaseModel):
+    report_type: str
+    period_label: str
+    due_date: date
+    status: str  # pending, submitted, overdue
+
+
+class ReportScheduleResponse(BaseModel):
+    application_id: uuid.UUID
+    entries: list[ReportScheduleEntry]
 
 
 class MessageResponse(BaseModel):

@@ -179,6 +179,18 @@ async def submit(
         object_type="application",
         object_id=str(application_id),
     )
+
+    # Notify applicant of successful submission
+    from app.features.messaging.service import send_notification
+
+    await send_notification(
+        db,
+        user_id=user.id,
+        event_type="application_submitted",
+        body=f"Your application {app.reference_number} has been submitted successfully and is now being screened.",
+        payload={"application_id": str(application_id), "reference_number": app.reference_number},
+    )
+
     await db.commit()
 
     return {"submitted": True, "reference_number": app.reference_number}

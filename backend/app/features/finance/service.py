@@ -64,6 +64,58 @@ async def release_tranche(
     return disbursement
 
 
+async def get_bank_details(db: AsyncSession, app_id: uuid.UUID) -> dict | None:
+    """Query disbursements for this app, return bank_details from the first one that has them."""
+    result = await db.execute(
+        select(Disbursement)
+        .where(Disbursement.application_id == app_id)
+        .order_by(Disbursement.released_at.desc().nullslast())
+    )
+    for disb in result.scalars().all():
+        if disb.bank_details and disb.bank_details.get("bank_account"):
+            return {
+                "application_id": app_id,
+                "bank_account": disb.bank_details["bank_account"],
+                "ifsc": disb.bank_details["ifsc"],
+                "beneficiary_name": disb.bank_details["beneficiary_name"],
+            }
+    return None
+
+
+async def update_bank_details(
+    db: AsyncSession,
+    app_id: uuid.UUID,
+    bank_account: str,
+    ifsc: str,
+    beneficiary_name: str,
+) -> dict:
+    """Update bank_details JSONB on all disbursements for this application."""
+    result = await db.execute(
+        select(Disbursement).where(Disbursement.application_id == app_id)
+    )
+    disbursements = list(result.scalars().all())
+    if not disbursements:
+        raise ValueError("No disbursements found for this application")
+
+    details = {
+        "bank_account": bank_account,
+        "ifsc": ifsc,
+        "beneficiary_name": beneficiary_name,
+    }
+    for disb in disbursements:
+        existing = dict(disb.bank_details) if disb.bank_details else {}
+        existing.update(details)
+        disb.bank_details = existing
+
+    await db.flush()
+    return {
+        "application_id": app_id,
+        "bank_account": bank_account,
+        "ifsc": ifsc,
+        "beneficiary_name": beneficiary_name,
+    }
+
+
 # ── Expenditure service ──────────────────────────────────────────────────────
 
 

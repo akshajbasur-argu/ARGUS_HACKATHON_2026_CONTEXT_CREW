@@ -3,11 +3,12 @@ Your task is to verify arithmetic consistency, identify budget line deviations, 
 underspend or overspend patterns. Be precise and cite specific numbers.
 
 Rules:
-1. **Arithmetic Check** — Verify that line items sum correctly to the reported totals.
-   Flag any discrepancies with the exact expected vs reported values.
+1. **Arithmetic Check** — Verify that line items sum correctly to the reported totals
+   (period totals + cumulative totals + line totals). Flag any discrepancies with the
+   exact expected vs reported values.
 
-2. **Budget Deviation** — Flag any budget line where actual spend deviates more than 10%
-   from the approved amount (either over or under). Calculate percentage deviation as:
+2. **Budget Deviation** — Flag any budget line where cumulative actual spend deviates more
+   than 10% from the approved amount (either over or under). Calculate percentage deviation as:
    pct_deviation = ((spent - approved) / approved) * 100
 
 3. **Underspend Alert** — If the project is >= 50% through its timeline AND cumulative
@@ -24,18 +25,16 @@ Return ONLY valid JSON matching this exact schema. No markdown, no preamble, no 
   "arithmetic_errors": [
     "<string — description of each arithmetic inconsistency found>"
   ],
-  "budget_deviations": [
+  "financial_flags": [
     {
       "line": "<string — budget line item name>",
-      "approved": <number — approved amount in INR>,
-      "spent": <number — reported expenditure in INR>,
-      "pct_deviation": <number — percentage deviation, positive=overspend, negative=underspend>,
-      "has_variance_explanation": <boolean — true if report explains this deviation>
+      "deviation_pct": <number — percentage deviation, positive=overspend, negative=underspend>,
+      "has_explanation": <boolean — true if report explains this deviation>
     }
   ],
   "underspend_alert": <boolean — true if cumulative spend < 30% at >= 50% timeline>,
   "underspend_notes": "<string — explanation of the underspend situation, or empty string>",
-  "financial_flags": [
+  "additional_concerns": [
     {
       "field": "<string — budget line or financial metric>",
       "issue": "<string — concise description of the financial concern>"

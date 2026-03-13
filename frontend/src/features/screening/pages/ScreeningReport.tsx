@@ -12,6 +12,7 @@ import { cn } from '@/shared/utils/cn'
 
 interface HardCheck {
   rule_code: string
+  rule_description: string
   passed: boolean
   detail: string
 }
@@ -19,6 +20,7 @@ interface HardCheck {
 interface SoftFlag {
   flag: string
   severity: 'high' | 'medium' | 'low'
+  rationale: string
 }
 
 interface ReportData {

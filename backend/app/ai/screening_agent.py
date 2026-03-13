@@ -27,7 +27,7 @@ from app.features.screening.models import ScreeningReport
 
 logger = logging.getLogger(__name__)
 
-# Default thematic threshold percentage — overridden by programme metadata
+# Default thematic threshold percentage — overridden by programme-specific values
 _DEFAULT_THRESHOLD_PCT = 50
 
 
@@ -58,6 +58,25 @@ RURAL_DISTRICTS = {
     "shravasti", "balrampur", "bahraich", "sonbhadra",
     "purnia", "kishanganj", "araria", "katihar",
     "pakur", "sahibganj", "dumka", "godda",
+}
+
+# Climate-vulnerable districts for ECAG geographic priority (hard check)
+CLIMATE_VULNERABLE_DISTRICTS = {
+    "sundarbans", "kutch", "jaisalmer", "barmer", "jodhpur",
+    "alappuzha", "ernakulam", "kottayam", "thrissur",
+    "puri", "kendrapara", "jagatsinghpur", "bhadrak",
+    "east godavari", "west godavari", "krishna", "guntur",
+    "nagapattinam", "cuddalore", "ramanathapuram",
+    "leh", "lahaul", "kinnaur", "chamoli", "uttarkashi",
+    "north 24 parganas", "south 24 parganas",
+    "bhavnagar", "junagadh", "porbandar",
+}
+
+# Programme-specific thematic score thresholds (float 0.0-1.0)
+_THEMATIC_THRESHOLDS: dict[str, float] = {
+    "CDG": 0.60,
+    "EIG": 0.65,
+    "ECAG": 0.60,
 }
 
 
@@ -113,6 +132,20 @@ def _overhead_check(budget: dict[str, Decimal], total: Decimal, max_pct: int = 1
 # ── CDG (Community Development Grants) ──────────────────────────────────────
 
 
+def _compute_duration_days(form: dict[str, Any]) -> int | None:
+    """Compute project duration in days from start_date and end_date fields."""
+    start = form.get("start_date")
+    end = form.get("end_date")
+    if start and end:
+        try:
+            start_dt = datetime.fromisoformat(str(start))
+            end_dt = datetime.fromisoformat(str(end))
+            return (end_dt - start_dt).days
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
 def _cdg_checks(app: Application, prog: GrantProgramme, org: Organisation | None) -> list[CheckResult]:
     results: list[CheckResult] = []
     form = _get_form(app)
@@ -120,13 +153,13 @@ def _cdg_checks(app: Application, prog: GrantProgramme, org: Organisation | None
     total = _budget_total(form)
     dur = _duration(form)
 
-    # E1: org_type must be ngo, trust, or society
-    allowed = {"ngo", "trust", "society"}
+    # E1: org_type must be NGO, Trust, or Section 8 Company
+    allowed = {"ngo", "trust", "section_8_company"}
     org_type = org.org_type.value if org else "unknown"
     results.append(CheckResult(
         "E1_org_type",
         org_type in allowed,
-        f"Organisation type '{org_type}' — {'allowed' if org_type in allowed else 'must be NGO, Trust, or Society'}",
+        f"Organisation type '{org_type}' — {'allowed' if org_type in allowed else 'must be NGO, Trust, or Section 8 Company'}",
     ))
 
     # E2: min age 2 years
@@ -154,17 +187,42 @@ def _cdg_checks(app: Application, prog: GrantProgramme, org: Organisation | None
         f"Budget INR {total:,.0f} — range [{prog.funding_min_inr:,.0f}, {prog.funding_max_inr:,.0f}]",
     ))
 
-    # E5: duration 6-18 months
-    results.append(CheckResult(
-        "E5_duration", 6 <= dur <= 18,
-        f"Duration {dur} months — {'within' if 6 <= dur <= 18 else 'outside'} 6-18 month range",
-    ))
+    # E5: duration 6-18 months (180-548 days)
+    duration_days = _compute_duration_days(form)
+    if duration_days is not None:
+        dur_ok = 180 <= duration_days <= 548
+        results.append(CheckResult(
+            "E5_duration", dur_ok,
+            f"Duration {duration_days} days — {'within' if dur_ok else 'outside'} 180-548 day range (6-18 months)",
+        ))
+    else:
+        dur_ok = 6 <= dur <= 18
+        results.append(CheckResult(
+            "E5_duration", dur_ok,
+            f"Duration {dur} months — {'within' if dur_ok else 'outside'} 6-18 month range (dates not available for day calculation)",
+        ))
 
     # E6: overhead <= 15%
     results.append(_overhead_check(budget, total, 15))
 
     # E7: budget sum
     results.append(_budget_sum_check(budget, total))
+
+    # E9: beneficiary count > 0 and cost per beneficiary < 50,000
+    beneficiary_count = int(form.get("beneficiary_count", form.get("beneficiaries_count", form.get("target_beneficiaries", 0))) or 0)
+    if beneficiary_count > 0 and total > 0:
+        cost_per_beneficiary = float(total) / beneficiary_count
+        ben_ok = cost_per_beneficiary < 50000
+        results.append(CheckResult(
+            "E9_beneficiary_cost", ben_ok,
+            f"{beneficiary_count} beneficiaries, INR {cost_per_beneficiary:,.0f}/beneficiary — "
+            f"{'within' if ben_ok else 'exceeds'} INR 50,000 cap",
+        ))
+    else:
+        results.append(CheckResult(
+            "E9_beneficiary_cost", False,
+            f"Beneficiary count is {beneficiary_count} — must be greater than 0",
+        ))
 
     return results
 
@@ -179,13 +237,13 @@ def _eig_checks(app: Application, prog: GrantProgramme, org: Organisation | None
     total = _budget_total(form)
     dur = _duration(form)
 
-    # E1: org_type
-    allowed = {"ngo", "trust", "society", "company"}
+    # E1: org_type — NGO, EdTech Non-profit, Research Institution, University
+    allowed = {"ngo", "edtech_nonprofit", "research_institution", "university"}
     org_type = org.org_type.value if org else "unknown"
     results.append(CheckResult(
         "E1_org_type",
         org_type in allowed,
-        f"Organisation type '{org_type}' — {'allowed' if org_type in allowed else 'restricted'}",
+        f"Organisation type '{org_type}' — {'allowed' if org_type in allowed else 'must be NGO, EdTech Non-profit, Research Institution, or University'}",
     ))
 
     # E2: min age 1 year
@@ -231,6 +289,14 @@ def _eig_checks(app: Application, prog: GrantProgramme, org: Organisation | None
     # E8: budget sum
     results.append(_budget_sum_check(budget, total))
 
+    # E10: impact measurement plan must be present
+    impact_plan = form.get("impact_measurement_plan", form.get("impact_plan", form.get("measurement_plan", "")))
+    has_impact_plan = bool(impact_plan and str(impact_plan).strip())
+    results.append(CheckResult(
+        "E10_impact_measurement", has_impact_plan,
+        f"Impact measurement plan: {'provided' if has_impact_plan else 'not provided — required for EIG'}",
+    ))
+
     return results
 
 
@@ -244,13 +310,13 @@ def _ecag_checks(app: Application, prog: GrantProgramme, org: Organisation | Non
     total = _budget_total(form)
     dur = _duration(form)
 
-    # E1: org_type — any registered entity
-    allowed = {"ngo", "trust", "society", "company", "government"}
+    # E1: org_type — NGO, FPO, Panchayat, Research Institution
+    allowed = {"ngo", "fpo", "panchayat", "research_institution"}
     org_type = org.org_type.value if org else "unknown"
     results.append(CheckResult(
         "E1_org_type",
         org_type in allowed,
-        f"Organisation type '{org_type}' — {'allowed' if org_type in allowed else 'not allowed'}",
+        f"Organisation type '{org_type}' — {'allowed' if org_type in allowed else 'must be NGO, FPO, Panchayat, or Research Institution'}",
     ))
 
     # E2: funding range
@@ -271,6 +337,29 @@ def _ecag_checks(app: Application, prog: GrantProgramme, org: Organisation | Non
 
     # E5: budget sum
     results.append(_budget_sum_check(budget, total))
+
+    # E6: geographic priority — district must be in climate-vulnerable list (hard check)
+    project_district = form.get("district", form.get("target_district", ""))
+    district_str = str(project_district).lower().strip()
+    # Also check against programme metadata for additional climate-vulnerable districts
+    meta_districts = (prog.metadata_json or {}).get("climate_vulnerable_districts", [])
+    all_climate_districts = CLIMATE_VULNERABLE_DISTRICTS | {d.lower() for d in meta_districts}
+    is_climate_priority = district_str in all_climate_districts if district_str else False
+    results.append(CheckResult(
+        "E6_climate_district", is_climate_priority,
+        f"District '{district_str}' — {'in climate-vulnerable priority list' if is_climate_priority else 'not in climate-vulnerable district list'}",
+    ))
+
+    # E8: community involvement plan must be present
+    community_plan = form.get(
+        "community_involvement_plan",
+        form.get("community_plan", form.get("community_engagement", "")),
+    )
+    has_community_plan = bool(community_plan and str(community_plan).strip())
+    results.append(CheckResult(
+        "E8_community_involvement", has_community_plan,
+        f"Community involvement plan: {'provided' if has_community_plan else 'not provided — required for ECAG'}",
+    ))
 
     return results
 
@@ -326,8 +415,7 @@ async def run_soft_checks(
     )
 
     grant_theme = programme.purpose or programme.name
-    meta = programme.metadata_json or {}
-    threshold = meta.get("screening_threshold", 60)
+    threshold = _THEMATIC_THRESHOLDS.get(programme.code, 0.60)
 
     prompt = render_prompt(
         "screening_soft_check.j2",
@@ -396,24 +484,6 @@ async def run_screening(
     hard_checks_json = [r.to_dict() for r in hard_results]
     all_hard_passed = all(r.passed for r in hard_results)
 
-    # ── ECAG geographic priority check ──────────────────────────────────
-    ecag_geo_flags: list[dict] = []
-    if programme.code == "ECAG":
-        form_data = _get_form(application)
-        project_district = form_data.get("district", form_data.get("target_district", ""))
-        climate_districts = (programme.metadata_json or {}).get("climate_vulnerable_districts", [])
-        if project_district:
-            is_priority = project_district.lower() in [d.lower() for d in climate_districts]
-            if not is_priority:
-                ecag_geo_flags.append({
-                    "flag": "non_priority_district",
-                    "severity": "low",
-                    "detail": (
-                        f"{project_district} is not in climate-vulnerable priority list "
-                        "— not rejected but noted"
-                    ),
-                })
-
     # ── Soft checks (AI) ─────────────────────────────────────────────────
     soft_result = await run_soft_checks(application, programme)
 
@@ -421,25 +491,36 @@ async def run_screening(
     narrative_score = Decimal(str(soft_result.get("narrative_coherence", 0)))
     soft_flags = soft_result.get("soft_flags", [])
 
-    # Add ECAG geographic flags
-    soft_flags.extend(ecag_geo_flags)
-
     # Add extra soft flags from AI analysis
     if soft_result.get("beneficiary_specificity") == "missing":
-        soft_flags.append({"flag": "No beneficiary information provided", "severity": "high"})
+        soft_flags.append({"flag": "No beneficiary information provided", "severity": "high", "detail": "Application does not specify any beneficiary information"})
     elif soft_result.get("beneficiary_specificity") == "vague":
-        soft_flags.append({"flag": "Beneficiary description is vague", "severity": "medium"})
+        soft_flags.append({"flag": "Beneficiary description is vague", "severity": "medium", "detail": "Beneficiary description lacks specificity"})
 
     if not soft_result.get("measurable_outcome"):
-        soft_flags.append({"flag": "Outcomes not clearly measurable", "severity": "medium"})
+        soft_flags.append({"flag": "Outcomes not clearly measurable", "severity": "medium", "detail": "Expected outcomes do not include quantifiable targets"})
+
+    # ── Thematic alignment as hard eligibility gate ───────────────────────
+    thematic_threshold = Decimal(str(_THEMATIC_THRESHOLDS.get(programme.code, 0.60)))
+    thematic_passed = thematic_score >= thematic_threshold
+
+    # Add thematic check to hard_checks_json for transparency
+    hard_checks_json.append(CheckResult(
+        "E_thematic_alignment",
+        thematic_passed,
+        f"AI thematic alignment score {thematic_score} — "
+        f"{'meets' if thematic_passed else 'below'} threshold of {thematic_threshold}",
+    ).to_dict())
+
+    if not thematic_passed:
+        all_hard_passed = False
 
     # ── Determine overall result ─────────────────────────────────────────
     meta = programme.metadata_json or {}
-    threshold = meta.get("screening_threshold", 60)
 
     if not all_hard_passed:
         overall = ScreeningOutcome.ineligible
-    elif thematic_score < threshold or narrative_score < threshold:
+    elif narrative_score < Decimal("0.50"):
         overall = ScreeningOutcome.needs_review
     else:
         overall = ScreeningOutcome.eligible

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from decimal import Decimal
 
@@ -139,6 +139,37 @@ async def get_report_with_analysis(db: AsyncSession, report_id: uuid.UUID) -> Re
     return result.scalar_one_or_none()
 
 
+async def trigger_milestone_tranches(
+    db: AsyncSession,
+    app_id: uuid.UUID,
+    report: Report,
+) -> int:
+    """Trigger milestone/mid-project/final tranches based on approved report type.
+
+    Returns the number of tranches flipped to 'ready'.
+    """
+    tranche_result = await db.execute(
+        select(Disbursement).where(
+            Disbursement.application_id == app_id,
+            Disbursement.status == DisbursementStatus.pending,
+        )
+    )
+    flipped = 0
+    for tranche in tranche_result.scalars().all():
+        trigger = tranche.trigger_type.value
+
+        # Final tranche: only on final report approval
+        if trigger == "final" and report.report_type == ReportType.final:
+            tranche.status = DisbursementStatus.ready
+            flipped += 1
+        # Mid-project and milestone tranches: on any report approval
+        elif trigger in ("milestone", "mid_project", "milestone_1", "milestone_2"):
+            tranche.status = DisbursementStatus.ready
+            flipped += 1
+
+    return flipped
+
+
 async def decide_report(
     db: AsyncSession,
     *,
@@ -158,17 +189,8 @@ async def decide_report(
         report.status = ReportStatus.approved
         report.reviewed_at = now
 
-        # Trigger any ready milestone tranches for this application
-        tranche_result = await db.execute(
-            select(Disbursement).where(
-                Disbursement.application_id == report.application_id,
-                Disbursement.status == DisbursementStatus.pending,
-            )
-        )
-        for tranche in tranche_result.scalars().all():
-            # Mark milestone/mid_project tranches as ready on report approval
-            if tranche.trigger_type.value in ("milestone", "mid_project", "milestone_1", "milestone_2"):
-                tranche.status = DisbursementStatus.ready
+        # Trigger appropriate tranches based on report type
+        await trigger_milestone_tranches(db, report.application_id, report)
 
     elif action == ComplianceAction.clarification:
         report.status = ReportStatus.under_review
@@ -199,3 +221,97 @@ async def decide_report(
 
     await db.flush()
     return report
+
+
+# ── Grantee: report schedule ────────────────────────────────────────────────
+
+
+def _add_months(start: date, months: int) -> date:
+    """Add N months to a date, clamping day to valid range."""
+    import calendar
+
+    month = start.month - 1 + months
+    year = start.year + month // 12
+    month = month % 12 + 1
+    day = min(start.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+async def get_report_schedule(
+    db: AsyncSession,
+    app_id: uuid.UUID,
+    applicant_id: uuid.UUID,
+) -> dict:
+    """Compute report schedule for an application based on agreement date."""
+    # 1. Get application, verify ownership
+    result = await db.execute(
+        select(Application).where(Application.id == app_id)
+    )
+    application = result.scalar_one_or_none()
+    if application is None:
+        raise ValueError("Application not found")
+    if application.applicant_id != applicant_id:
+        raise ValueError("Not authorized to view schedule for this application")
+
+    valid_statuses = {
+        ApplicationStatus.active,
+        ApplicationStatus.report_due,
+        ApplicationStatus.agreement_acknowledged,
+    }
+    if application.status not in valid_statuses:
+        raise ValueError(
+            f"Application must be in {[s.value for s in valid_statuses]} status"
+        )
+
+    # 2. Compute 6-month intervals from agreement/updated_at
+    start_date: date = application.updated_at.date()
+    today = date.today()
+
+    # Generate schedule: progress reports every 6 months for 2 years, then final
+    grant_duration_months = 24
+    entries: list[dict] = []
+    period_num = 1
+    current_offset = 6
+
+    while current_offset < grant_duration_months:
+        due = _add_months(start_date, current_offset)
+        entries.append({
+            "report_type": "progress",
+            "period_label": f"Progress Report {period_num} (Month {current_offset - 5}-{current_offset})",
+            "due_date": due,
+            "status": "pending",
+        })
+        period_num += 1
+        current_offset += 6
+
+    # Final report at end of grant period
+    final_due = _add_months(start_date, grant_duration_months)
+    entries.append({
+        "report_type": "final",
+        "period_label": f"Final Report (Month {grant_duration_months})",
+        "due_date": final_due,
+        "status": "pending",
+    })
+
+    # 3. Cross-reference with existing reports
+    reports_result = await db.execute(
+        select(Report)
+        .where(Report.application_id == app_id)
+        .order_by(Report.submitted_at.asc())
+    )
+    existing_reports = list(reports_result.scalars().all())
+
+    submitted_periods = {r.period_label for r in existing_reports}
+
+    for entry in entries:
+        if entry["period_label"] in submitted_periods:
+            entry["status"] = "submitted"
+        elif entry["due_date"] < today:
+            entry["status"] = "overdue"
+        else:
+            entry["status"] = "pending"
+
+    return {
+        "application_id": app_id,
+        "entries": entries,
+    }

@@ -3,13 +3,14 @@ import { PageHeader } from '@/shared/components/PageHeader'
 import { SectionCard } from '@/shared/components/SectionCard'
 import { DataTable, type Column } from '@/shared/components/DataTable'
 import { StatusPill } from '@/shared/components/StatusPill'
-import { FormInput, FormTextarea } from '@/shared/components/FormField'
+import { FormInput, FormTextarea, FormSelect } from '@/shared/components/FormField'
 import { Modal } from '@/shared/components/Modal'
 import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
 import { cn } from '@/shared/utils/cn'
 import { formatINR } from '@/shared/utils/formatCurrency'
 import { formatDate } from '@/shared/utils/formatDate'
 import { apiClient } from '@/api/client'
+import { useAuthStore } from '@/store/authStore'
 
 interface ExpRecord {
   id: string
@@ -34,7 +35,18 @@ const STATUS_MAP: Record<string, string> = {
   queried: 'rejected',
 }
 
+const BUDGET_CATEGORIES = [
+  { value: 'personnel', label: 'Personnel' },
+  { value: 'equipment', label: 'Equipment' },
+  { value: 'travel', label: 'Travel' },
+  { value: 'overheads', label: 'Overheads' },
+  { value: 'other', label: 'Other' },
+]
+
 export function ExpenditureRecords() {
+  const user = useAuthStore((s) => s.user)
+  const isGrantee = user?.role === 'applicant'
+
   const [appId, setAppId] = useState('')
   const [records, setRecords] = useState<ExpRecord[]>([])
   const [loading, setLoading] = useState(false)
@@ -47,6 +59,17 @@ export function ExpenditureRecords() {
   const [verifyNotes, setVerifyNotes] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [verifyError, setVerifyError] = useState('')
+
+  // Submit expenditure modal (grantee)
+  const [showSubmit, setShowSubmit] = useState(false)
+  const [submitDate, setSubmitDate] = useState('')
+  const [submitPayee, setSubmitPayee] = useState('')
+  const [submitAmount, setSubmitAmount] = useState('')
+  const [submitCategory, setSubmitCategory] = useState('personnel')
+  const [submitDescription, setSubmitDescription] = useState('')
+  const [submitReceipt, setSubmitReceipt] = useState<File | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   const fetchRecords = useCallback(async () => {
     if (!appId.trim()) {
@@ -84,7 +107,6 @@ export function ExpenditureRecords() {
         notes: verifyNotes.trim() || null,
       })
       setVerifyTarget(null)
-      // Refresh
       const res = await apiClient.get(`/v1/finance/expenditure/${appId.trim()}`)
       setRecords(res.data)
     } catch (err: unknown) {
@@ -94,6 +116,49 @@ export function ExpenditureRecords() {
       setVerifying(false)
     }
   }, [verifyTarget, verifyStatus, verifyNotes, appId])
+
+  const handleSubmitExpenditure = useCallback(async () => {
+    if (!submitDate || !submitPayee.trim() || !submitAmount || !submitDescription.trim()) {
+      setSubmitError('Date, payee, amount, and description are required.')
+      return
+    }
+    if (!appId.trim()) {
+      setSubmitError('Please search for an application first.')
+      return
+    }
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      const formData = new FormData()
+      formData.append('application_id', appId.trim())
+      formData.append('date', submitDate)
+      formData.append('payee', submitPayee.trim())
+      formData.append('amount_inr', submitAmount)
+      formData.append('budget_category', submitCategory)
+      formData.append('description', submitDescription.trim())
+      if (submitReceipt) {
+        formData.append('receipt', submitReceipt)
+      }
+
+      await apiClient.post('/v1/finance/expenditure', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setShowSubmit(false)
+      setSubmitDate('')
+      setSubmitPayee('')
+      setSubmitAmount('')
+      setSubmitCategory('personnel')
+      setSubmitDescription('')
+      setSubmitReceipt(null)
+      const res = await apiClient.get(`/v1/finance/expenditure/${appId.trim()}`)
+      setRecords(res.data)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setSubmitError(msg || 'Failed to submit expenditure record.')
+    } finally {
+      setSubmitting(false)
+    }
+  }, [appId, submitDate, submitPayee, submitAmount, submitCategory, submitDescription, submitReceipt])
 
   const columns: Column<ExpRecord>[] = [
     {
@@ -140,6 +205,9 @@ export function ExpenditureRecords() {
         if (row.status !== 'pending') {
           return <span className="font-body text-xs text-sand">{row.reviewer_notes || '--'}</span>
         }
+        if (isGrantee) {
+          return <span className="font-body text-xs text-sand">Pending review</span>
+        }
         return (
           <button
             type="button"
@@ -172,7 +240,7 @@ export function ExpenditureRecords() {
           placeholder="Enter application UUID"
           className="flex-1"
         />
-        <div className="flex items-end">
+        <div className="flex items-end gap-2">
           <button
             type="button"
             onClick={fetchRecords}
@@ -185,6 +253,18 @@ export function ExpenditureRecords() {
           >
             {loading ? 'Loading...' : 'Search'}
           </button>
+          {isGrantee && searched && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowSubmit(true)
+                setSubmitError('')
+              }}
+              className="rounded-md bg-moss px-5 py-2 font-body text-sm font-medium text-cream transition-colors hover:bg-moss/90"
+            >
+              Add Expenditure
+            </button>
+          )}
         </div>
       </div>
 
@@ -208,7 +288,7 @@ export function ExpenditureRecords() {
         </SectionCard>
       )}
 
-      {/* Verify modal */}
+      {/* Verify modal (Finance Officer) */}
       <Modal
         open={!!verifyTarget}
         onClose={() => setVerifyTarget(null)}
@@ -303,6 +383,103 @@ export function ExpenditureRecords() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Submit Expenditure modal (Grantee) */}
+      <Modal
+        open={showSubmit}
+        onClose={() => setShowSubmit(false)}
+        title="Submit Expenditure Record"
+        width="md"
+      >
+        <div className="space-y-4">
+          <FormInput
+            label="Date"
+            type="date"
+            required
+            value={submitDate}
+            onChange={(e) => setSubmitDate(e.target.value)}
+          />
+          <FormInput
+            label="Payee"
+            required
+            value={submitPayee}
+            onChange={(e) => setSubmitPayee(e.target.value)}
+            placeholder="Name of payee"
+          />
+          <FormInput
+            label="Amount (INR)"
+            type="number"
+            required
+            value={submitAmount}
+            onChange={(e) => setSubmitAmount(e.target.value)}
+            placeholder="0.00"
+          />
+          <FormSelect
+            label="Budget Category"
+            required
+            value={submitCategory}
+            onChange={(e) => setSubmitCategory((e.target as HTMLSelectElement).value)}
+            options={BUDGET_CATEGORIES}
+          />
+          <FormTextarea
+            label="Description"
+            required
+            value={submitDescription}
+            onChange={(e) => setSubmitDescription(e.target.value)}
+            placeholder="Describe what this expenditure was for..."
+            rows={3}
+          />
+          <div>
+            <label className="block font-body text-xs font-medium text-bark mb-1">
+              Receipt Upload
+            </label>
+            <input
+              type="file"
+              accept="image/*,.pdf"
+              onChange={(e) => setSubmitReceipt(e.target.files?.[0] ?? null)}
+              className="block w-full rounded-md border border-sand bg-cream px-3 py-2 font-body text-sm text-soil file:mr-3 file:rounded-md file:border-0 file:bg-clay file:px-3 file:py-1 file:text-xs file:font-medium file:text-cream"
+            />
+            {submitReceipt && (
+              <p className="mt-1 font-body text-xs text-sand">
+                Selected: {submitReceipt.name}
+              </p>
+            )}
+          </div>
+
+          {submitError && (
+            <div className="rounded-md border border-rust/30 bg-rust/10 px-3 py-2">
+              <p className="font-body text-xs text-rust">{submitError}</p>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowSubmit(false)}
+              disabled={submitting}
+              className={cn(
+                'rounded-md border border-sand bg-cream px-4 py-2',
+                'font-body text-sm font-medium text-bark transition-colors hover:bg-parchment',
+                'disabled:cursor-not-allowed disabled:opacity-50',
+              )}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmitExpenditure}
+              disabled={submitting}
+              className={cn(
+                'rounded-md bg-moss px-4 py-2 font-body text-sm font-medium text-cream',
+                'transition-colors hover:bg-moss/90',
+                'disabled:cursor-not-allowed disabled:opacity-60',
+              )}
+            >
+              {submitting ? 'Submitting...' : 'Submit Record'}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   )

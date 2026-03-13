@@ -136,15 +136,24 @@ async def generate_review_package(
     else:
         summary_text = json.dumps(summary_result, indent=2)
 
-    # Scoring
+    # Scoring — preserve full entries with justification and source_section
     suggested_scores: dict = {}
+    ai_scores_array: list[dict] = []
     if isinstance(scoring_result, Exception):
         logger.error("Scoring call failed: %s", scoring_result)
     else:
         for entry in scoring_result.get("scores", []):
             dim = entry.get("dimension", "unknown")
             score = entry.get("score", 0)
+            justification = entry.get("justification", "")
+            source_section = entry.get("evidence_section", entry.get("source_section", ""))
             suggested_scores[dim] = float(score)
+            ai_scores_array.append({
+                "dimension": dim,
+                "score": float(score),
+                "justification": justification,
+                "source_section": source_section,
+            })
 
     # Risk flags
     if isinstance(risk_result, Exception):
@@ -159,6 +168,7 @@ async def generate_review_package(
         application_id=application_id,
         summary_text=summary_text,
         suggested_scores=suggested_scores,
+        ai_scores=ai_scores_array,
         risk_flags=risk_flags,
         generated_at=datetime.now(timezone.utc),
     )

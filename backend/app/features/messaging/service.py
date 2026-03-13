@@ -17,20 +17,36 @@ from app.features.messaging.models import Message, Notification
 
 EVENT_TITLES: dict[str, str] = {
     "application_submitted": "Application Submitted",
+    "screening_complete_eligible": "Screening Passed",
+    "screening_complete_ineligible": "Screening Result — Ineligible",
     "screening_eligible": "Screening Passed",
     "screening_ineligible": "Screening Result",
     "clarification_requested": "Clarification Requested",
     "review_assigned": "Review Assignment",
     "review_due_reminder": "Review Due Reminder",
     "award_approved": "Award Approved",
+    "application_approved": "Application Approved",
     "application_rejected": "Application Rejected",
+    "application_waitlisted": "Application Waitlisted",
     "agreement_sent": "Agreement Sent",
     "tranche_released": "Tranche Released",
+    "report_due_reminder_30": "Report Due in 30 Days",
+    "report_due_reminder_14": "Report Due in 14 Days",
+    "report_due_reminder_7": "Report Due in 7 Days",
     "report_due_30": "Report Due in 30 Days",
     "report_due_14": "Report Due in 14 Days",
     "report_due_7": "Report Due in 7 Days",
     "report_overdue": "Report Overdue",
     "report_approved": "Report Approved",
+    "disbursement_hold": "Disbursement Hold",
+    "applicant_message_reply": "Applicant Message Reply",
+    "message_received": "New Message",
+    "letter_sent": "Letter Sent",
+    "agreement_acknowledged": "Agreement Acknowledged",
+    "tranche_ready": "Tranche Ready for Release",
+    "compliance_approved": "Compliance Report Approved",
+    "compliance_clarification": "Compliance Clarification Needed",
+    "compliance_compliance_action": "Compliance Action Required",
 }
 
 
@@ -149,6 +165,21 @@ async def list_notifications(
         .limit(100)
     )
     return list(result.scalars().all())
+
+
+async def get_unread_count(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+) -> int:
+    """Return the number of unread notifications for a user."""
+    from sqlalchemy import func as sa_func
+
+    result = await db.execute(
+        select(sa_func.count())
+        .select_from(Notification)
+        .where(Notification.user_id == user_id, Notification.is_read.is_(False))
+    )
+    return result.scalar_one()
 
 
 async def mark_notification_read(

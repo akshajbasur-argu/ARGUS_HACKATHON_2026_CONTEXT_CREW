@@ -71,17 +71,37 @@ async def make_decision(
         object_id=str(app_id),
         metadata={"decision": body.decision.value, "reason": body.reason},
     )
-    await db.commit()
 
-    # Fire notification (async task)
-    try:
-        from worker.tasks.notification_tasks import task_send_notification
+    # Notify applicant of decision (persisted to DB)
+    from app.features.messaging.service import send_notification
+    from sqlalchemy import select
+    from app.features.applications.models import Application
 
-        task_send_notification.delay(
-            str(app_id), f"application_{body.decision.value}", {"reference": str(app_id)}
+    app_result = await db.execute(select(Application).where(Application.id == app_id))
+    application = app_result.scalar_one_or_none()
+
+    if application:
+        decision_val = body.decision.value
+        event_map = {
+            "approved": "award_approved",
+            "rejected": "application_rejected",
+            "waitlisted": "application_waitlisted",
+        }
+        event_type = event_map.get(decision_val, f"application_{decision_val}")
+        message_map = {
+            "approved": f"Congratulations! Your application {application.reference_number} has been approved for funding.",
+            "rejected": f"Your application {application.reference_number} was not selected. Reason: {body.reason}",
+            "waitlisted": f"Your application {application.reference_number} has been waitlisted. You will be notified if a spot opens.",
+        }
+        await send_notification(
+            db,
+            user_id=application.applicant_id,
+            event_type=event_type,
+            body=message_map.get(decision_val, f"Decision on application {application.reference_number}: {decision_val}"),
+            payload={"application_id": str(app_id), "reference_number": application.reference_number, "decision": decision_val},
         )
-    except Exception:
-        pass  # Non-critical — notification failure shouldn't block decision
+
+    await db.commit()
 
     return award
 
@@ -130,16 +150,24 @@ async def send_letter_endpoint(
         object_type="award_letter",
         object_id=str(letter.id),
     )
-    await db.commit()
 
-    try:
-        from worker.tasks.notification_tasks import task_send_notification
+    # Notify applicant that their letter has been sent
+    from app.features.messaging.service import send_notification as _send_notif
+    from sqlalchemy import select as _select
+    from app.features.applications.models import Application as _App
 
-        task_send_notification.delay(
-            str(app_id), "letter_sent", {"letter_type": letter.letter_type}
+    _app_result = await db.execute(_select(_App).where(_App.id == app_id))
+    _application = _app_result.scalar_one_or_none()
+    if _application:
+        await _send_notif(
+            db,
+            user_id=_application.applicant_id,
+            event_type="letter_sent",
+            body=f"A {letter.letter_type} letter has been sent for your application {_application.reference_number}.",
+            payload={"application_id": str(app_id), "letter_type": letter.letter_type},
         )
-    except Exception:
-        pass
+
+    await db.commit()
 
     return letter
 
@@ -190,16 +218,24 @@ async def send_agreement_endpoint(
         object_type="agreement",
         object_id=str(agreement.id),
     )
-    await db.commit()
 
-    try:
-        from worker.tasks.notification_tasks import task_send_notification
+    # Notify applicant that agreement has been sent
+    from app.features.messaging.service import send_notification as _send_notif2
+    from sqlalchemy import select as _sel2
+    from app.features.applications.models import Application as _App2
 
-        task_send_notification.delay(
-            str(app_id), "agreement_sent", {"agreement_id": str(agreement.id)}
+    _app_r2 = await db.execute(_sel2(_App2).where(_App2.id == app_id))
+    _app2 = _app_r2.scalar_one_or_none()
+    if _app2:
+        await _send_notif2(
+            db,
+            user_id=_app2.applicant_id,
+            event_type="agreement_sent",
+            body=f"A Grant Agreement has been sent for your application {_app2.reference_number}. Please review and acknowledge.",
+            payload={"application_id": str(app_id), "agreement_id": str(agreement.id)},
         )
-    except Exception:
-        pass
+
+    await db.commit()
 
     return agreement
 
@@ -243,20 +279,26 @@ async def acknowledge_agreement_endpoint(
         object_type="agreement",
         object_id=str(agreement.id),
     )
+
+    # Notify finance officers about tranche readiness
+    from app.features.messaging.service import send_notification as _send_ack
+    from sqlalchemy import select as _sel_ack
+    from app.features.auth.models import User as _UserAck
+    from app.core.enums import UserRole as _UR
+
+    fo_result = await db.execute(
+        _sel_ack(_UserAck).where(_UserAck.role == _UR.finance_officer, _UserAck.is_active.is_(True))
+    )
+    for fo in fo_result.scalars().all():
+        await _send_ack(
+            db,
+            user_id=fo.id,
+            event_type="tranche_ready",
+            body=f"Agreement acknowledged for application {app_id}. Inception tranche is ready for release.",
+            payload={"application_id": str(app_id), "agreement_id": str(agreement.id)},
+        )
+
     await db.commit()
-
-    try:
-        from worker.tasks.notification_tasks import task_send_notification
-
-        task_send_notification.delay(
-            str(app_id), "agreement_acknowledged", {"agreement_id": str(agreement.id)}
-        )
-        # Also notify about tranche readiness
-        task_send_notification.delay(
-            str(app_id), "tranche_ready", {"agreement_id": str(agreement.id)}
-        )
-    except Exception:
-        pass
 
     return agreement
 
@@ -281,16 +323,26 @@ async def acknowledge_agreement_alias(
         object_type="agreement",
         object_id=str(agreement.id),
     )
-    await db.commit()
 
     # Notify finance officers about tranche readiness
-    try:
-        from worker.tasks.notification_tasks import task_send_notification
-        task_send_notification.delay(
-            str(app_id), "tranche_ready", {"agreement_id": str(agreement.id)}
+    from app.features.messaging.service import send_notification as _send_ack2
+    from sqlalchemy import select as _sel_ack2
+    from app.features.auth.models import User as _UserAck2
+    from app.core.enums import UserRole as _UR2
+
+    fo_result2 = await db.execute(
+        _sel_ack2(_UserAck2).where(_UserAck2.role == _UR2.finance_officer, _UserAck2.is_active.is_(True))
+    )
+    for fo2 in fo_result2.scalars().all():
+        await _send_ack2(
+            db,
+            user_id=fo2.id,
+            event_type="tranche_ready",
+            body=f"Agreement acknowledged for application {app_id}. Inception tranche is ready for release.",
+            payload={"application_id": str(app_id), "agreement_id": str(agreement.id)},
         )
-    except Exception:
-        pass
+
+    await db.commit()
 
     return agreement
 

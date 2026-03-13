@@ -52,8 +52,10 @@ class ReviewPackage(Base):
         UUID(as_uuid=True), ForeignKey("applications.id"), nullable=False, index=True
     )
     summary_text: Mapped[str | None] = mapped_column(Text)
-    # suggested_scores: {dimension: score} — AI pre-fill
+    # suggested_scores: {dimension: score} — AI pre-fill (flat dict for quick lookup)
     suggested_scores: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    # ai_scores: [{dimension, score, justification, source_section}] — full scored array
+    ai_scores: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
     # risk_flags: [{type, description, severity}]
     risk_flags: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
     generated_at: Mapped[datetime] = mapped_column(

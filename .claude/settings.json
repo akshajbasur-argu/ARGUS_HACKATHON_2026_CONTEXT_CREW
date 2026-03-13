@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(python -m py_compile app/features/finance/router.py)",
+      "Bash(python -m py_compile app/features/finance/service.py)",
+      "Bash(python -m py_compile app/features/finance/schemas.py)",
+      "Bash(python -m py_compile app/features/compliance/service.py)",
+      "Bash(python -m py_compile app/features/compliance/router.py)",
+      "Bash(python -m py_compile app/features/compliance/schemas.py)",
+      "Bash(python -m py_compile app/features/messaging/router.py)",
+      "Bash(python -m py_compile app/features/messaging/service.py)",
+      "Bash(python -m py_compile app/features/admin/router.py)",
+      "Bash(python -m py_compile app/features/admin/service.py)",
+      "Bash(python -c \":*)",
+      "Bash(python3 -c \":*)",
+      "Bash(python3 -m py_compile app/features/finance/router.py)",
+      "Bash(python3 -m py_compile app/features/finance/service.py)",
+      "Bash(python3 -m py_compile app/features/finance/schemas.py)",
+      "Bash(python3 -m py_compile app/features/compliance/service.py)",
+      "Bash(python3 -m py_compile app/features/compliance/router.py)",
+      "Bash(python3 -m py_compile app/features/compliance/schemas.py)",
+      "Bash(python3 -m py_compile app/features/messaging/router.py)",
+      "Bash(python3 -m py_compile app/features/messaging/service.py)",
+      "Bash(python3 -m py_compile app/features/admin/router.py)",
+      "Bash(python3 -m py_compile app/features/admin/service.py)"
+    ]
+  }
+}

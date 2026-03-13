@@ -65,9 +65,26 @@ async def post_message(
         )
         application = app_result.scalar_one_or_none()
         if application:
-            # If sender is applicant, notify the programme officer (skip for now — no officer FK on app)
-            # If sender is staff, notify the applicant
-            if user.role != UserRole.applicant:
+            if user.role == UserRole.applicant:
+                # Applicant sent a message — notify all programme officers
+                from app.features.auth.models import User as _MsgUser
+
+                po_result = await db.execute(
+                    select(_MsgUser).where(
+                        _MsgUser.role == UserRole.program_officer,
+                        _MsgUser.is_active.is_(True),
+                    )
+                )
+                for po in po_result.scalars().all():
+                    await service.send_notification(
+                        db,
+                        user_id=po.id,
+                        event_type="applicant_message_reply",
+                        body=f"Applicant replied on application {application.reference_number}.",
+                        payload={"application_id": str(app_id), "message_id": str(msg.id)},
+                    )
+            else:
+                # Staff sent a message — notify the applicant
                 await service.send_notification(
                     db,
                     user_id=application.applicant_id,
@@ -109,6 +126,16 @@ async def get_notifications(
     """List notifications for the current user."""
     notifications = await service.list_notifications(db, user.id)
     return notifications
+
+
+@router.get("/notifications/unread-count", response_model=dict)
+async def get_unread_count(
+    user: Annotated[User, Depends(require_auth)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get unread notification count for badge display."""
+    count = await service.get_unread_count(db, user.id)
+    return {"unread_count": count}
 
 
 @router.post("/notifications/{notification_id}/read", response_model=schemas.MessageResponse)

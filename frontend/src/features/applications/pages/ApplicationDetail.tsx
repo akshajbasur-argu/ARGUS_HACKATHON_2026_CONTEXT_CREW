@@ -8,6 +8,7 @@ import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
 import { StageTimeline, type TimelineEvent } from '@/shared/components/StageTimeline'
 import { formatDate, formatDateTime } from '@/shared/utils/formatDate'
 import { cn } from '@/shared/utils/cn'
+import { MessagesPage } from '@/features/messaging/pages/MessagesPage'
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -422,26 +423,9 @@ export function ApplicationDetail() {
         </SectionCard>
       )}
 
-      {/* ── Messages tab (placeholder) ────────────────────────────── */}
+      {/* ── Messages tab ────────────────────────────────────────── */}
       {activeTab === 'messages' && (
-        <SectionCard title="Messages">
-          <div className="py-12 text-center">
-            <svg
-              className="mx-auto h-10 w-10 text-sand/50"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <p className="mt-3 font-body text-sm text-sand">
-              No messages yet. Communication with reviewers will appear here.
-            </p>
-          </div>
-        </SectionCard>
+        <MessagesPage appId={app.id} />
       )}
 
       {/* ── Reports tab (active grants only) ──────────────────────── */}

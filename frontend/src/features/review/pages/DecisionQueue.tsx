@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiClient } from '@/api/client'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { StatusPill } from '@/shared/components/StatusPill'
 import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
 import { Modal } from '@/shared/components/Modal'
 import { cn } from '@/shared/utils/cn'
+import { formatDate } from '@/shared/utils/formatDate'
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -23,6 +24,12 @@ interface ReviewerScoreSet {
   composite_score: number | null
 }
 
+interface RiskFlag {
+  type: string
+  description: string
+  severity: 'high' | 'medium' | 'low'
+}
+
 interface QueueItem {
   application_id: string
   reference_number: string
@@ -33,7 +40,13 @@ interface QueueItem {
   reviewer_scores: ReviewerScoreSet[]
   composite_score: number | null
   review_completed_at: string | null
+  risk_flags: RiskFlag[]
 }
+
+/* ── Sort config ──────────────────────────────────────────────────────── */
+
+type SortKey = 'score' | 'programme' | 'reviewer' | 'date'
+type SortDir = 'asc' | 'desc'
 
 /* ── Component ─────────────────────────────────────────────────────────── */
 
@@ -41,6 +54,18 @@ export function DecisionQueue() {
   const [items, setItems] = useState<QueueItem[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('pending')
+
+  // Advanced filters
+  const [scoreMin, setScoreMin] = useState('')
+  const [scoreMax, setScoreMax] = useState('')
+  const [grantTypeFilter, setGrantTypeFilter] = useState('')
+  const [reviewerFilter, setReviewerFilter] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+
+  // Sorting
+  const [sortKey, setSortKey] = useState<SortKey>('score')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   // Decision modal state
   const [selected, setSelected] = useState<QueueItem | null>(null)
@@ -66,6 +91,102 @@ export function DecisionQueue() {
     fetchQueue()
   }, [fetchQueue])
 
+  /* ── Derived filter options ────────────────────────────────────────── */
+  const grantTypes = useMemo(
+    () => [...new Set(items.map((i) => i.programme_code))].sort(),
+    [items],
+  )
+  const reviewerNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const item of items) {
+      for (const rs of item.reviewer_scores) names.add(rs.reviewer_name)
+    }
+    return [...names].sort()
+  }, [items])
+
+  /* ── Filter + sort ─────────────────────────────────────────────────── */
+  const filtered = useMemo(() => {
+    let list = [...items]
+
+    // Score range
+    if (scoreMin) {
+      const min = parseFloat(scoreMin)
+      if (!isNaN(min)) list = list.filter((i) => i.composite_score != null && Number(i.composite_score) >= min)
+    }
+    if (scoreMax) {
+      const max = parseFloat(scoreMax)
+      if (!isNaN(max)) list = list.filter((i) => i.composite_score != null && Number(i.composite_score) <= max)
+    }
+
+    // Grant type
+    if (grantTypeFilter) {
+      list = list.filter((i) => i.programme_code === grantTypeFilter)
+    }
+
+    // Reviewer
+    if (reviewerFilter) {
+      list = list.filter((i) =>
+        i.reviewer_scores.some((rs) => rs.reviewer_name === reviewerFilter),
+      )
+    }
+
+    // Date range
+    if (dateFrom) {
+      const from = new Date(dateFrom)
+      list = list.filter((i) => i.review_completed_at && new Date(i.review_completed_at) >= from)
+    }
+    if (dateTo) {
+      const to = new Date(dateTo + 'T23:59:59')
+      list = list.filter((i) => i.review_completed_at && new Date(i.review_completed_at) <= to)
+    }
+
+    // Sort
+    list.sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'score':
+          cmp = (Number(a.composite_score) || 0) - (Number(b.composite_score) || 0)
+          break
+        case 'programme':
+          cmp = a.programme_code.localeCompare(b.programme_code)
+          break
+        case 'reviewer':
+          cmp = (a.reviewer_scores[0]?.reviewer_name ?? '').localeCompare(
+            b.reviewer_scores[0]?.reviewer_name ?? '',
+          )
+          break
+        case 'date':
+          cmp =
+            new Date(a.review_completed_at ?? 0).getTime() -
+            new Date(b.review_completed_at ?? 0).getTime()
+          break
+      }
+      return sortDir === 'desc' ? -cmp : cmp
+    })
+
+    return list
+  }, [items, scoreMin, scoreMax, grantTypeFilter, reviewerFilter, dateFrom, dateTo, sortKey, sortDir])
+
+  const hasFilters = scoreMin || scoreMax || grantTypeFilter || reviewerFilter || dateFrom || dateTo
+
+  function clearFilters() {
+    setScoreMin('')
+    setScoreMax('')
+    setGrantTypeFilter('')
+    setReviewerFilter('')
+    setDateFrom('')
+    setDateTo('')
+  }
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('desc')
+    }
+  }
+
   /* ── Submit decision ─────────────────────────────────────────────── */
   async function submitDecision() {
     if (!selected || !decisionType || !reason.trim()) return
@@ -86,6 +207,28 @@ export function DecisionQueue() {
     }
   }
 
+  /* ── Sort header helper ────────────────────────────────────────────── */
+  function SortHeader({ label, sKey }: { label: string; sKey: SortKey }) {
+    const active = sortKey === sKey
+    return (
+      <button
+        type="button"
+        onClick={() => toggleSort(sKey)}
+        className={cn(
+          'flex items-center gap-1 font-heading text-xs font-semibold uppercase tracking-wider',
+          active ? 'text-clay' : 'text-bark hover:text-clay',
+        )}
+      >
+        {label}
+        {active && (
+          <svg className={cn('h-3 w-3', sortDir === 'asc' && 'rotate-180')} viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+        )}
+      </button>
+    )
+  }
+
   /* ── Render ──────────────────────────────────────────────────────── */
   return (
     <div>
@@ -94,7 +237,7 @@ export function DecisionQueue() {
         breadcrumbs={[{ label: 'Decisions' }]}
       />
 
-      {/* Filter bar */}
+      {/* Decision status filter */}
       <div className="mb-4 flex gap-2">
         {[
           { value: 'pending', label: 'Pending' },
@@ -117,20 +260,116 @@ export function DecisionQueue() {
         ))}
       </div>
 
+      {/* Advanced filters */}
+      <div className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-sand bg-parchment px-4 py-3">
+        <div>
+          <label className="block font-body text-[10px] font-medium text-bark mb-1">Score Range</label>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              max="5"
+              value={scoreMin}
+              onChange={(e) => setScoreMin(e.target.value)}
+              placeholder="Min"
+              className="w-16 rounded-md border border-sand bg-cream px-2 py-1.5 font-mono text-xs text-soil focus:border-clay focus:outline-none"
+            />
+            <span className="text-sand text-xs">–</span>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              max="5"
+              value={scoreMax}
+              onChange={(e) => setScoreMax(e.target.value)}
+              placeholder="Max"
+              className="w-16 rounded-md border border-sand bg-cream px-2 py-1.5 font-mono text-xs text-soil focus:border-clay focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block font-body text-[10px] font-medium text-bark mb-1">Grant Type</label>
+          <select
+            value={grantTypeFilter}
+            onChange={(e) => setGrantTypeFilter(e.target.value)}
+            className="rounded-md border border-sand bg-cream px-2 py-1.5 font-body text-xs text-soil focus:border-clay focus:outline-none"
+          >
+            <option value="">All</option>
+            {grantTypes.map((gt) => (
+              <option key={gt} value={gt}>{gt}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block font-body text-[10px] font-medium text-bark mb-1">Reviewer</label>
+          <select
+            value={reviewerFilter}
+            onChange={(e) => setReviewerFilter(e.target.value)}
+            className="rounded-md border border-sand bg-cream px-2 py-1.5 font-body text-xs text-soil focus:border-clay focus:outline-none"
+          >
+            <option value="">All</option>
+            {reviewerNames.map((rn) => (
+              <option key={rn} value={rn}>{rn}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block font-body text-[10px] font-medium text-bark mb-1">Date Range</label>
+          <div className="flex items-center gap-1">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="rounded-md border border-sand bg-cream px-2 py-1.5 font-mono text-xs text-soil focus:border-clay focus:outline-none"
+            />
+            <span className="text-sand text-xs">–</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="rounded-md border border-sand bg-cream px-2 py-1.5 font-mono text-xs text-soil focus:border-clay focus:outline-none"
+            />
+          </div>
+        </div>
+
+        {hasFilters && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="rounded-md px-3 py-1.5 font-body text-xs text-rust hover:underline"
+          >
+            Clear Filters
+          </button>
+        )}
+      </div>
+
+      {/* Sort bar */}
+      <div className="mb-3 flex items-center gap-4 px-1">
+        <span className="font-body text-[10px] text-sand uppercase tracking-wider">Sort by:</span>
+        <SortHeader label="Score" sKey="score" />
+        <SortHeader label="Grant Type" sKey="programme" />
+        <SortHeader label="Reviewer" sKey="reviewer" />
+        <SortHeader label="Date" sKey="date" />
+      </div>
+
       {/* Queue */}
       {loading ? (
         <div className="flex h-40 items-center justify-center">
           <LoadingSpinner label="Loading decisions queue..." />
         </div>
-      ) : items.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="py-12 text-center">
           <p className="font-body text-sm text-sand">
-            No applications in this category.
+            No applications match the current filters.
           </p>
         </div>
       ) : (
         <div className="space-y-4">
-          {items.map((item) => (
+          {filtered.map((item) => (
             <div
               key={item.application_id}
               className="rounded-lg border border-sand bg-white shadow-card"
@@ -146,6 +385,11 @@ export function DecisionQueue() {
                 <span className="font-body text-xs text-sand">
                   {item.applicant_name}
                 </span>
+                {item.review_completed_at && (
+                  <span className="font-mono text-[10px] text-sand">
+                    {formatDate(item.review_completed_at)}
+                  </span>
+                )}
                 <div className="ml-auto flex items-center gap-3">
                   <StatusPill status={item.status} />
                   {item.composite_score != null && (
@@ -155,6 +399,42 @@ export function DecisionQueue() {
                   )}
                 </div>
               </div>
+
+              {/* Risk flags */}
+              {item.risk_flags && item.risk_flags.length > 0 && (
+                <div className="border-b border-straw/50 px-5 py-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-body text-[10px] font-medium uppercase tracking-wider text-sand">
+                      Risk Flags ({item.risk_flags.length})
+                    </span>
+                    {item.risk_flags.map((flag, i) => (
+                      <span
+                        key={i}
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-body text-[10px] font-medium',
+                          flag.severity === 'high'
+                            ? 'bg-rust/10 text-rust'
+                            : flag.severity === 'medium'
+                              ? 'bg-amber/10 text-amber'
+                              : 'bg-sand/20 text-bark',
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'inline-block h-1.5 w-1.5 rounded-full',
+                            flag.severity === 'high'
+                              ? 'bg-rust'
+                              : flag.severity === 'medium'
+                                ? 'bg-amber'
+                                : 'bg-sand',
+                          )}
+                        />
+                        {flag.description}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Reviewer scores comparison */}
               <div className="px-5 py-3">

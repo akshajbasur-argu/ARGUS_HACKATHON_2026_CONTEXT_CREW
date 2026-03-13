@@ -110,5 +110,20 @@ class ProgrammeDashboardResponse(BaseModel):
     per_programme: list[ProgrammeSummary]
 
 
+class BankDetailsRequest(BaseModel):
+    bank_account: str = Field(min_length=1, max_length=50)
+    ifsc: str = Field(min_length=11, max_length=11)
+    beneficiary_name: str = Field(min_length=1, max_length=255)
+
+
+class BankDetailsRead(BaseModel):
+    application_id: uuid.UUID
+    bank_account: str
+    ifsc: str
+    beneficiary_name: str
+
+    model_config = {"from_attributes": True}
+
+
 class MessageResponse(BaseModel):
     detail: str

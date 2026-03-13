@@ -23,6 +23,7 @@ from app.features.review.schemas import (
     ScoreDimension,
     SubmitScores,
 )
+from app.features.auth.service import write_audit_log
 from app.features.review.service import (
     assign_reviewers,
     complete_review,
@@ -63,6 +64,27 @@ async def assign_reviewers_endpoint(
         assignments = await assign_reviewers(db, application_id, body.reviewer_ids)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    await write_audit_log(
+        db,
+        actor_id=user.id,
+        action="reviewers_assigned",
+        object_type="application",
+        object_id=str(application_id),
+        metadata={"reviewer_ids": [str(rid) for rid in body.reviewer_ids]},
+    )
+
+    # Notify each assigned reviewer
+    from app.features.messaging.service import send_notification
+
+    for assignment in assignments:
+        await send_notification(
+            db,
+            user_id=assignment.reviewer_id,
+            event_type="review_assigned",
+            body=f"You have been assigned to review application {application_id}. Please access your review queue.",
+            payload={"application_id": str(application_id), "assignment_id": str(assignment.id)},
+        )
 
     await db.commit()
 
@@ -126,6 +148,15 @@ async def post_review_decision(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
+    await write_audit_log(
+        db,
+        actor_id=user.id,
+        action=f"post_review_{body.decision}",
+        object_type="application",
+        object_id=str(application_id),
+        metadata={"decision": body.decision, "reason": body.reason},
+    )
+
     await db.commit()
     return {"status": application.status.value, "application_id": str(application_id)}
 
@@ -160,8 +191,8 @@ async def get_workspace(
     data = await get_review_workspace(db, application_id, user.id)
     if data is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No review assignment found for this application",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not assigned to review this application",
         )
     return data
 
