@@ -11,6 +11,7 @@ from app.features.messaging.router import router as messaging_router
 from app.features.programmes.router import router as programmes_router
 from app.features.review.router import router as review_router
 from app.features.screening.router import router as screening_router
+from app.api.v1.staff_router import router as staff_router
 
 api_router = APIRouter()
 
@@ -25,3 +26,4 @@ api_router.include_router(documents_router,    prefix="/documents",    tags=["do
 api_router.include_router(finance_router,      prefix="/finance",      tags=["finance"])
 api_router.include_router(messaging_router,    prefix="/messaging",    tags=["messaging"])
 api_router.include_router(admin_router,        prefix="/admin",        tags=["admin"])
+api_router.include_router(staff_router,        prefix="/staff",        tags=["staff"])

@@ -59,8 +59,8 @@ async def register(
             detail="Email already registered",
         )
 
-    await create_user(db, body)
-    await store_otp(body.email)
+    user = await create_user(db, body)
+    await store_otp(body.email, user_id=user.id)
     await db.commit()
     return MessageResponse(detail="Registration successful. Check console for OTP.")
 

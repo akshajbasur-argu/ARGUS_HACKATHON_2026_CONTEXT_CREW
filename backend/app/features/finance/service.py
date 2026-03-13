@@ -142,25 +142,6 @@ async def get_dashboard_data(db: AsyncSession) -> dict:
     app_rows = apps_result.all()
 
     # Get all disbursements grouped by application
-    disb_result = await db.execute(
-        select(
-            Disbursement.application_id,
-            sa_func.sum(Disbursement.amount_inr).label("total_committed"),
-            sa_func.sum(
-                sa_func.coalesce(
-                    # Only count disbursed amounts
-                    Disbursement.amount_inr.op("*")(
-                        sa_func.cast(
-                            Disbursement.status == DisbursementStatus.disbursed,
-                            Disbursement.amount_inr.type,
-                        )
-                    ),
-                    0,
-                )
-            ).label("total_disbursed"),
-        )
-        .group_by(Disbursement.application_id)
-    )
     # Simpler approach: query raw
     all_disb_result = await db.execute(select(Disbursement))
     all_disb = all_disb_result.scalars().all()

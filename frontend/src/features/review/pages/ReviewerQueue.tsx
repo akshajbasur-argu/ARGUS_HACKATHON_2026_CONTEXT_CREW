@@ -31,7 +31,9 @@ export function ReviewerQueue() {
     setLoading(true)
     try {
       const res = await apiClient.get('/v1/review/queue')
-      setRows(res.data)
+      // Only show assignments that haven't been completed yet
+      const pendingReviews = res.data.filter((r: QueueRow) => !r.completed_at)
+      setRows(pendingReviews)
     } catch {
       /* empty */
     } finally {

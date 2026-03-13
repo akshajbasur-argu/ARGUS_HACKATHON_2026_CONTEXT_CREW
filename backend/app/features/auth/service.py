@@ -116,15 +116,24 @@ def _generate_otp() -> str:
     return "".join(random.choices(string.digits, k=settings.OTP_LENGTH))
 
 
-async def store_otp(email: str) -> str:
+async def store_otp(email: str, user_id: uuid.UUID | None = None) -> str:
     otp = _generate_otp()
     r = get_redis()
     key = f"otp:{email}"
     await r.set(key, otp, ex=settings.OTP_TTL_SECONDS)
-    # Print to console for hackathon demo (no email provider)
+    # Print to console for hackathon demo
     print(f"\n{'=' * 50}")
     print(f"  OTP for {email}: {otp}")
     print(f"{'=' * 50}\n")
+
+    # Send email notification if user_id is provided
+    if user_id:
+        from worker.tasks.notification_tasks import task_send_notification
+        task_send_notification.delay(
+            user_id=str(user_id),
+            event_type="otp_request",
+            payload={"message": f"Your verification code for GrantFlow is: {otp}"}
+        )
     return otp
 
 

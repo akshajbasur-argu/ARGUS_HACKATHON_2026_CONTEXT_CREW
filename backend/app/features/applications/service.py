@@ -61,19 +61,37 @@ async def list_applications(
         q = q.where(Application.status == status_filter)
 
     result = await db.execute(q)
-    rows = result.all()
-
     return [
-        ApplicationListItem(
-            id=app.id,
-            reference_number=app.reference_number,
-            programme_id=app.programme_id,
-            programme_name=prog_name,
-            status=app.status,
-            submitted_at=app.submitted_at,
-            updated_at=app.updated_at,
+        ApplicationListItem.model_validate(
+            {**app.__dict__, "programme_name": prog_name}
         )
-        for app, prog_name in rows
+        for app, prog_name in result.all()
+    ]
+
+
+async def list_all_applications(
+    db: AsyncSession,
+    *,
+    programme_id: uuid.UUID | None = None,
+    status_filter: ApplicationStatus | None = None,
+) -> list[ApplicationListItem]:
+    """List all applications (staff view) with optional filters."""
+    q = (
+        select(Application, GrantProgramme.name)
+        .join(GrantProgramme, GrantProgramme.id == Application.programme_id)
+        .order_by(Application.updated_at.desc())
+    )
+    if programme_id:
+        q = q.where(Application.programme_id == programme_id)
+    if status_filter:
+        q = q.where(Application.status == status_filter)
+
+    result = await db.execute(q)
+    return [
+        ApplicationListItem.model_validate(
+            {**app.__dict__, "programme_name": prog_name}
+        )
+        for app, prog_name in result.all()
     ]
 
 

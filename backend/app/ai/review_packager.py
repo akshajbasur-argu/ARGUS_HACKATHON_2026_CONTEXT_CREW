@@ -104,14 +104,19 @@ async def generate_review_package(
     budget_json = json.dumps(form_data.get("budget", {}), indent=2, default=str)
 
     # Build rubric JSON from programme metadata
-    scoring_rubric = programme_meta.get("scoring_rubric", {})
-    rubric_dimensions = scoring_rubric.get("dimensions", [
-        {"name": "Relevance", "description": "Alignment with programme goals"},
-        {"name": "Feasibility", "description": "Realistic implementation plan"},
-        {"name": "Budget Justification", "description": "Cost-effectiveness and clarity"},
-        {"name": "Impact Potential", "description": "Scale and depth of expected impact"},
-        {"name": "Sustainability", "description": "Continuation after grant period"},
-    ])
+    scoring_rubric = programme_meta.get("scoring_rubric")
+    if isinstance(scoring_rubric, dict):
+        rubric_dimensions = scoring_rubric.get("dimensions", [])
+    elif isinstance(scoring_rubric, list):
+        rubric_dimensions = scoring_rubric
+    else:
+        rubric_dimensions = [
+            {"name": "Relevance", "description": "Alignment with programme goals"},
+            {"name": "Feasibility", "description": "Realistic implementation plan"},
+            {"name": "Budget Justification", "description": "Cost-effectiveness and clarity"},
+            {"name": "Impact Potential", "description": "Scale and depth of expected impact"},
+            {"name": "Sustainability", "description": "Continuation after grant period"},
+        ]
     rubric_json = json.dumps(rubric_dimensions, indent=2)
 
     # ── 3. Make 3 parallel OpenAI calls ─────────────────────────────────────

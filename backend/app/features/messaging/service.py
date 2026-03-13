@@ -31,6 +31,9 @@ EVENT_TITLES: dict[str, str] = {
     "report_due_7": "Report Due in 7 Days",
     "report_overdue": "Report Overdue",
     "report_approved": "Report Approved",
+    "otp_request": "Account Verification",
+    "account_verified": "Welcome to GrantFlow",
+    "staff_account_created": "Staff Account Created",
 }
 
 

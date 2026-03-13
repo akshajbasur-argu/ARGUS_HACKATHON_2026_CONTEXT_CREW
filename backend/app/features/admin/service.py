@@ -73,6 +73,18 @@ async def create_staff_user(
     print(f"  Role:     {role.value}")
     print(f"{'=' * 50}\n")
 
+    # Send email notification
+    from worker.tasks.notification_tasks import task_send_notification
+    task_send_notification.delay(
+        user_id=str(user.id),
+        event_type="staff_account_created",
+        payload={
+            "message": f"Welcome to GrantFlow. Your account has been created with the role of {role.value}.\n\n"
+                       f"Temporary Password: {temp_password}\n\n"
+                       "Please log in and change your password immediately."
+        }
+    )
+
     return user
 
 
