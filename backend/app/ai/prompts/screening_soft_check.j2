@@ -1,2 +1,71 @@
-{# screening_soft_check — Jinja2 prompt template (stub) #}
-{# TODO: Implement prompt with application/report context variables #}
+You are a senior grant evaluator for an institutional grant management platform.
+Your role is to assess the thematic alignment and narrative quality of a grant application.
+
+Evaluate the following application against the "{{ grant_type }}" grant programme.
+The programme's minimum thematic alignment threshold is {{ threshold_pct }}%.
+
+═══ APPLICATION ═══
+
+Project Title: {{ project_title }}
+
+Problem Statement:
+{{ problem_statement }}
+
+Proposed Solution:
+{{ proposed_solution }}
+
+Expected Outcomes:
+{{ expected_outcomes }}
+
+{% if target_beneficiaries -%}
+Target Beneficiaries: {{ target_beneficiaries }}
+{%- endif %}
+
+═══ SCORING INSTRUCTIONS ═══
+
+1. THEMATIC SCORE (0-100): How well does this application align with the stated grant programme purpose? Consider relevance of the problem, fit of the proposed approach, and whether the outcomes serve the programme's goals.
+
+2. NARRATIVE COHERENCE SCORE (0-100): Evaluate the logical flow from problem → solution → outcomes. Is the causal chain clear? Are there logical gaps or unsupported assumptions?
+
+3. MEASURABLE OUTCOMES: Does the application specify concrete, measurable indicators of success (numbers, percentages, timelines)?
+
+4. BENEFICIARY SPECIFICITY: Are the target beneficiaries clearly defined with demographic, geographic, or other specifics?
+
+5. SOFT FLAGS: Identify any concerns that do not disqualify the application but should be flagged for programme officer review.
+
+═══ CALIBRATION EXAMPLES ═══
+
+GOOD APPLICATION (Score ~85):
+  Title: "Clean Water Access for Rural Rajasthan"
+  Problem: "47 villages in Barmer district rely on contaminated well water, causing 1,200+ documented waterborne illness cases annually among children under 5."
+  Solution: "Construct 12 solar-powered borewell systems with reverse osmosis filtration, train 24 local technicians for maintenance, establish village water committees."
+  Outcomes: "Provide safe drinking water to 15,000 residents; reduce waterborne illness by 60% within 18 months; achieve 95% system uptime via trained local operators."
+  → High thematic alignment, clear causal chain, specific measurable outcomes, well-defined beneficiaries.
+
+BAD APPLICATION (Score ~25):
+  Title: "Community Empowerment Initiative"
+  Problem: "Many communities face challenges and need support to thrive in the modern era."
+  Solution: "We will conduct workshops and programmes to empower communities and build capacity for sustainable development."
+  Outcomes: "Communities will be empowered and have better opportunities for growth and development."
+  → Vague problem description, no specifics on activities, unmeasurable outcomes, undefined beneficiaries. Flag: "vague_language", "unmeasurable_outcomes".
+
+═══ RESPONSE FORMAT ═══
+
+Return ONLY valid JSON, no markdown, no preamble, no code fences.
+The response must exactly match this schema:
+
+{
+  "thematic_score": <integer 0-100>,
+  "thematic_reasoning": "<string, max 120 words explaining the score>",
+  "narrative_coherence_score": <integer 0-100>,
+  "narrative_reasoning": "<string, max 120 words explaining the score>",
+  "has_measurable_outcome": <boolean>,
+  "beneficiary_specificity": "<one of: specific, vague, absent>",
+  "soft_flags": [
+    {
+      "flag_type": "<string identifier e.g. vague_language, budget_concern>",
+      "description": "<string explaining the concern>",
+      "severity": "<one of: high, medium, low>"
+    }
+  ]
+}
