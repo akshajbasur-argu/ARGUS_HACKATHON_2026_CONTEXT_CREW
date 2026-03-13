@@ -121,3 +121,61 @@ async def get_audit_log(
         "page": page,
         "page_size": page_size,
     }
+
+
+# ── Template management ─────────────────────────────────────────────────────
+
+
+@router.get("/templates", response_model=list[schemas.TemplateRead])
+async def list_templates(
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """List all letter templates."""
+    templates = await service.list_templates(db)
+    if not templates:
+        # Seed defaults on first access
+        await service.seed_default_templates(db)
+        await db.commit()
+        templates = await service.list_templates(db)
+    return templates
+
+
+@router.get("/templates/{code}", response_model=schemas.TemplateRead)
+async def get_template(
+    code: str,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get a single template by code."""
+    template = await service.get_template(db, code)
+    if template is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Template '{code}' not found")
+    return template
+
+
+@router.patch("/templates/{code}", response_model=dict)
+async def update_template(
+    code: str,
+    body: schemas.TemplateUpdate,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update a template's body_text. Validates required merge fields."""
+    try:
+        success, missing = await service.update_template(db, code, body.body_text)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    if not success:
+        return {"updated": False, "error": f"Missing merge fields: {', '.join('{{' + f + '}}' for f in missing)}", "missing_fields": missing}
+
+    await write_audit_log(
+        db,
+        actor_id=admin.id,
+        action="template_updated",
+        object_type="letter_template",
+        object_id=code,
+    )
+    await db.commit()
+    return {"updated": True, "missing_fields": []}

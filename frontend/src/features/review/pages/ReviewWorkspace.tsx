@@ -55,6 +55,16 @@ interface WorkspaceData {
   existing_scores: ScoreDim[]
 }
 
+interface Annotation {
+  id: string
+  application_id: string
+  reviewer_id: string
+  text_selection: string
+  section: string
+  note: string
+  created_at: string
+}
+
 /* ── Star selector ─────────────────────────────────────────────────────── */
 
 function StarSelector({
@@ -155,6 +165,15 @@ export function ReviewWorkspace() {
   const [scores, setScores] = useState<Record<string, { score: number | null; comment: string }>>({})
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [annotations, setAnnotations] = useState<Annotation[]>([])
+  const [annotationPopover, setAnnotationPopover] = useState<{
+    x: number
+    y: number
+    text: string
+    section: string
+  } | null>(null)
+  const [annotationNote, setAnnotationNote] = useState('')
+  const [savingAnnotation, setSavingAnnotation] = useState(false)
 
   const isCompleted = data?.completed_at != null
 
@@ -263,6 +282,57 @@ export function ReviewWorkspace() {
     return Math.round((weightedSum / totalWeight) * 100) / 100
   }
 
+  /* ── Annotations ─────────────────────────────────────────────────── */
+  const fetchAnnotations = useCallback(async () => {
+    if (!id) return
+    try {
+      const res = await apiClient.get(`/v1/review/review/${id}/annotations`)
+      setAnnotations(res.data)
+    } catch {
+      /* empty */
+    }
+  }, [id])
+
+  useEffect(() => {
+    fetchAnnotations()
+  }, [fetchAnnotations])
+
+  async function saveAnnotation() {
+    if (!id || !annotationPopover || !annotationNote.trim()) return
+    setSavingAnnotation(true)
+    try {
+      await apiClient.post(`/v1/review/review/${id}/annotations`, {
+        text_selection: annotationPopover.text,
+        section: annotationPopover.section,
+        note: annotationNote.trim(),
+      })
+      setAnnotationPopover(null)
+      setAnnotationNote('')
+      await fetchAnnotations()
+    } catch {
+      /* empty */
+    } finally {
+      setSavingAnnotation(false)
+    }
+  }
+
+  function handleTextSelect(section: string) {
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed || !selection.toString().trim()) return
+    const text = selection.toString().trim()
+    if (text.length < 3) return
+
+    const range = selection.getRangeAt(0)
+    const rect = range.getBoundingClientRect()
+    setAnnotationPopover({
+      x: rect.left + rect.width / 2,
+      y: rect.top - 10,
+      text,
+      section,
+    })
+    setAnnotationNote('')
+  }
+
   const allScored = data?.rubric.every((r) => scores[r.dimension]?.score != null) ?? false
   const composite = computeComposite()
 
@@ -316,7 +386,7 @@ export function ReviewWorkspace() {
         <div className="space-y-4 lg:col-span-3">
           <div className="rounded-lg border border-sand bg-parchment overflow-hidden">
             <Accordion title="Project Details" defaultOpen>
-              <dl className="space-y-3">
+              <dl className="space-y-3" onMouseUp={() => handleTextSelect('Project Details')}>
                 {[
                   ['Project Title', fd.project_title],
                   ['Problem Statement', fd.problem_statement],
@@ -335,7 +405,7 @@ export function ReviewWorkspace() {
             </Accordion>
 
             <Accordion title="Team & Sustainability">
-              <dl className="space-y-3">
+              <dl className="space-y-3" onMouseUp={() => handleTextSelect('Team & Sustainability')}>
                 <div>
                   <dt className="font-body text-xs text-sand">Team Description</dt>
                   <dd className="mt-0.5 font-body text-sm text-soil whitespace-pre-wrap">
@@ -515,6 +585,29 @@ export function ReviewWorkspace() {
             )}
           </SectionCard>
 
+          {/* Your Annotations */}
+          {annotations.length > 0 && (
+            <SectionCard title="Your Annotations">
+              <div className="space-y-3">
+                {annotations.map((ann) => (
+                  <div key={ann.id} className="rounded-md border border-straw/50 overflow-hidden">
+                    <div className="bg-straw/20 px-3 py-1.5">
+                      <p className="font-body text-xs text-bark italic line-clamp-2">
+                        "{ann.text_selection}"
+                      </p>
+                    </div>
+                    <div className="px-3 py-2">
+                      <p className="font-body text-sm text-soil">{ann.note}</p>
+                      <p className="mt-1 font-mono text-[10px] text-sand">
+                        {ann.section}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+
           {/* Risk Flags */}
           {data.package && data.package.risk_flags.length > 0 && (
             <SectionCard title="Risk Flags">
@@ -549,6 +642,49 @@ export function ReviewWorkspace() {
           )}
         </div>
       </div>
+
+      {/* Annotation popover */}
+      {annotationPopover && (
+        <div
+          className="fixed z-50 w-72 rounded-lg border border-sand bg-white shadow-lg"
+          style={{
+            left: Math.min(annotationPopover.x - 144, window.innerWidth - 300),
+            top: annotationPopover.y - 180,
+          }}
+        >
+          <div className="border-b border-straw px-3 py-2">
+            <p className="font-body text-xs text-sand">Selected text:</p>
+            <p className="mt-0.5 font-body text-xs text-bark italic line-clamp-2">
+              "{annotationPopover.text}"
+            </p>
+          </div>
+          <div className="p-3">
+            <textarea
+              value={annotationNote}
+              onChange={(e) => setAnnotationNote(e.target.value)}
+              placeholder="Add your note..."
+              rows={3}
+              className="w-full rounded-md border border-sand bg-parchment px-2 py-1.5 font-body text-xs text-soil placeholder:text-sand/60 focus:border-clay focus:outline-none focus:ring-[2px] focus:ring-clay/30"
+              autoFocus
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={() => setAnnotationPopover(null)}
+                className="flex-1 rounded-md border border-sand px-2 py-1.5 font-heading text-xs text-bark hover:bg-parchment"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveAnnotation}
+                disabled={!annotationNote.trim() || savingAnnotation}
+                className="flex-1 rounded-md bg-moss px-2 py-1.5 font-heading text-xs font-semibold text-cream hover:bg-moss/90 disabled:opacity-50"
+              >
+                {savingAnnotation ? 'Saving...' : 'Save Note'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

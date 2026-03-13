@@ -58,6 +58,7 @@ import { ExpenditureRecords } from '@/features/finance/pages/ExpenditureRecords'
 import { UserManagement } from '@/features/admin/pages/UserManagement'
 import { AuditLog } from '@/features/admin/pages/AuditLog'
 import { ProgrammeManagement } from '@/features/admin/pages/ProgrammeManagement'
+import { TemplateEditor } from '@/features/admin/pages/TemplateEditor'
 
 export function AppRouter() {
   return (
@@ -162,6 +163,7 @@ export function AppRouter() {
         <Route path="admin/users" element={<UserManagement />} />
         <Route path="admin/audit" element={<AuditLog />} />
         <Route path="admin/programmes" element={<ProgrammeManagement />} />
+        <Route path="admin/templates" element={<TemplateEditor />} />
       </Route>
 
       {/* ── Catch-all ──────────────────────────────────────────────────── */}

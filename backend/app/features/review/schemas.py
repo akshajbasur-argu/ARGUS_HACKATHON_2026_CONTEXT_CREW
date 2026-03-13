@@ -130,3 +130,21 @@ class PostReviewQueueItem(BaseModel):
     review_completed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class AnnotationCreate(BaseModel):
+    text_selection: str = Field(..., min_length=1, max_length=5000)
+    section: str = Field(..., min_length=1, max_length=100)
+    note: str = Field(..., min_length=1, max_length=5000)
+
+
+class AnnotationRead(BaseModel):
+    id: uuid.UUID
+    application_id: uuid.UUID
+    reviewer_id: uuid.UUID
+    text_selection: str
+    section: str
+    note: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
